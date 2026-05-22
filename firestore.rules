@@ -1,0 +1,129 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    // Verify user ID syntax and boundaries
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- User Profiles ---
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow create, update: if isOwner(userId) && isValidUser(incoming());
+      allow delete: if false;
+    }
+
+    function isValidUser(user) {
+      return user.keys().hasAll(['uid', 'email'])
+        && user.uid == request.auth.uid
+        && user.email is string
+        && user.email.size() <= 256
+        && (!('displayName' in user) || (user.displayName is string && user.displayName.size() <= 128))
+        && (!('photoURL' in user) || (user.photoURL is string && user.photoURL.size() <= 512))
+        && (!('subscriptionTier' in user) || (user.subscriptionTier is string && user.subscriptionTier.size() <= 32))
+        && (!('subscriptionPeriod' in user) || (user.subscriptionPeriod is string && user.subscriptionPeriod.size() <= 32))
+        && (!('subscriptionId' in user) || (user.subscriptionId is string && user.subscriptionId.size() <= 128))
+        && (!('trialExpires' in user) || (user.trialExpires is string && user.trialExpires.size() <= 128));
+    }
+
+    // --- Business Leads ---
+    match /leads/{leadId} {
+      // Allow access if user is verified owner of this B2B lead
+      allow get: if isSignedIn() && isOwner(existing().ownerId);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(leadId)
+        && isValidLead(incoming())
+        && isOwner(incoming().ownerId);
+
+      allow update: if isSignedIn()
+        && isOwner(existing().ownerId)
+        && isValidLead(incoming())
+        && incoming().ownerId == existing().ownerId
+        && (
+          // Action list allowable
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'outreachScript', 'outreachScriptSource', 'activityLog'])
+        );
+
+      allow delete: if isSignedIn() && isOwner(existing().ownerId);
+    }
+
+    function isValidLead(lead) {
+      return lead.keys().hasAll(['id', 'ownerId', 'name', 'country', 'city', 'category', 'phone', 'email', 'status', 'createdAt'])
+        && lead.id is string
+        && lead.id.size() <= 128
+        && lead.ownerId is string
+        && lead.ownerId == request.auth.uid
+        && lead.name is string
+        && lead.name.size() <= 256
+        && lead.country in ['USA', 'UK', 'Germany', 'Canada']
+        && lead.city is string
+        && lead.city.size() <= 128
+        && lead.category is string
+        && lead.category.size() <= 128
+        && lead.phone is string
+        && lead.phone.size() <= 32
+        && lead.email is string
+        && lead.email.size() <= 256
+        && lead.status in ['new', 'contacted', 'proposal', 'negotiating', 'won', 'rejected']
+        && lead.createdAt is string
+        && (!('address' in lead) || (lead.address is string && lead.address.size() <= 512))
+        && (!('outreachScriptSource' in lead) || (lead.outreachScriptSource is string && lead.outreachScriptSource.size() <= 64));
+    }
+
+    // --- Search Queries ---
+    match /queries/{queryId} {
+      allow get: if isSignedIn() && isOwner(existing().userId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(queryId)
+        && isValidQuery(incoming())
+        && isOwner(incoming().userId);
+
+      // Scan queries are historical records and cannot be updated
+      allow update, delete: if false;
+    }
+
+    function isValidQuery(q) {
+      return q.keys().hasAll(['id', 'userId', 'city', 'country', 'category', 'discoveredCount', 'timestamp'])
+        && q.id is string
+        && q.id.size() <= 128
+        && q.userId is string
+        && q.userId == request.auth.uid
+        && q.city is string
+        && q.city.size() <= 128
+        && q.country is string
+        && q.country.size() <= 128
+        && q.category is string
+        && q.category.size() <= 128
+        && q.discoveredCount is number
+        && q.timestamp is string
+        && (!('source' in q) || (q.source is string && q.source.size() <= 64));
+    }
+  }
+}

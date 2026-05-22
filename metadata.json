@@ -1,0 +1,6 @@
+{
+  "name": "Webless Business Tracker",
+  "description": "Tracks businesses in USA, UK, Germany, and Canada without a website and generates targeted sales and outreach templates for phone and email follow-up.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

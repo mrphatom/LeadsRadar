@@ -1,0 +1,151 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Information about a registered platform user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique Firebase Authentication User UID."
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User friendly display name."
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Avatar URL for the user."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the user account was initialized."
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "BusinessLead": {
+      "title": "Business Lead",
+      "description": "A B2B prospect discovered through search or added manually.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique ID for the lead."
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the user who owns/saved this lead."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the local business."
+        },
+        "country": {
+          "type": "string",
+          "enum": ["USA", "UK", "Germany", "Canada"],
+          "description": "Territory where business is operating."
+        },
+        "city": {
+          "type": "string",
+          "description": "City of the business."
+        },
+        "address": {
+          "type": "string",
+          "description": "Full street address of the business."
+        },
+        "category": {
+          "type": "string",
+          "description": "Niche or category of the business."
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone number."
+        },
+        "email": {
+          "type": "string",
+          "description": "Business contact email."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["new", "contacted", "proposal", "negotiating", "won", "rejected"],
+          "description": "Current sales stage of the lead in the CRM pipeline."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Custom discovery/audit notes or user annotations."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Standard server-verified timestamp of creation."
+        },
+        "outreachScriptSource": {
+          "type": "string",
+          "description": "Underlying LLM source tier generating the pitch."
+        }
+      },
+      "required": ["id", "ownerId", "name", "country", "city", "category", "phone", "email", "status", "createdAt"]
+    },
+    "SearchQuery": {
+      "title": "Search Query",
+      "description": "A record of past scans run by the user.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique search record identifier."
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the user who executed the search scan."
+        },
+        "city": {
+          "type": "string",
+          "description": "Searched city city."
+        },
+        "country": {
+          "type": "string",
+          "description": "Searched territory country."
+        },
+        "category": {
+          "type": "string",
+          "description": "Niche or category searched."
+        },
+        "discoveredCount": {
+          "type": "number",
+          "description": "How many leads were discovered."
+        },
+        "source": {
+          "type": "string",
+          "description": "Search source (e.g. google-search-grounding or rate-limit-fallback)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the search."
+        }
+      },
+      "required": ["id", "userId", "city", "country", "category", "discoveredCount", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Store user profiles."
+    },
+    "leads/{leadId}": {
+      "schema": "BusinessLead",
+      "description": "Store discovered business prospects."
+    },
+    "queries/{queryId}": {
+      "schema": "SearchQuery",
+      "description": "Store users' historical scan triggers."
+    }
+  }
+}
