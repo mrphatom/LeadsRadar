@@ -1,14 +1,34 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
+import fs from "fs";
+import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import { initializeApp as initFirebase } from "firebase/app";
+import { getFirestore as initFirestore, doc as fsDoc, getDoc as fsGetDoc, setDoc as fsSetDoc, updateDoc as fsUpdateDoc } from "firebase/firestore";
 // Stripe import removed
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
+
+let db: any = null;
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const configRaw = fs.readFileSync(configPath, "utf8");
+    const firebaseConfig = JSON.parse(configRaw);
+    const firebaseApp = initFirebase(firebaseConfig);
+    db = initFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || undefined);
+    console.log("Firestore successfully initialized on Node server wrapper.");
+  } else {
+    console.warn("No firebase-applet-config.json configuration detected.");
+  }
+} catch (err) {
+  console.error("Failed to initialize server-side Firestore instance:", err);
+}
 
 const PORT = 3000;
 const hasApiKey = !!process.env.GEMINI_API_KEY;
@@ -343,10 +363,14 @@ Structure:
 });
 
 // Fallback pitch generator helper
-function generateFallbackPitch(lead: any) {
-  return {
-    emailSubject: `Modernizing the Digital Presence for ${lead.name} in ${lead.city}`,
-    emailBody: `Dear ${lead.name} Team,
+function generateFallbackPitch(lead: any, variant = "direct", language = "English") {
+  const isGer = language?.toLowerCase() === "german";
+  const isFre = language?.toLowerCase() === "french";
+  const isSpa = language?.toLowerCase() === "spanish";
+  const isIta = language?.toLowerCase() === "italian";
+
+  let emailSubject = `Modernizing the Digital Presence for ${lead.name} in ${lead.city}`;
+  let emailBody = `Dear ${lead.name} Team,
 
 I'm a professional web developer located nearby, and I recently came across your listing for your outstanding ${lead.category} service. I noticed that online customers looking for you are currently guided solely to third party listings.
 
@@ -355,51 +379,148 @@ By launching a dedicated custom landing page with self-booking, professional cus
 Would you be open to a brief 5-minute phone call to look at a free visual mockup we designed for you?
 
 Best regards,
-LeadFinder Outreach Consultant`,
-    phoneScript: `Hi there! I was looking up ${lead.category} services in ${lead.city} and came across ${lead.name}. Your local customer reviews look absolutely incredible! 
+LeadFinder Outreach Consultant`;
 
-I noticed that you don't have a direct website online yet for booking/viewing details. I actually design responsive mobile pages for local owners to save them hours on telephone scheduling. If I sent you a quick, free visual draft I made of what your business website could look like, would you be open to taking a look?`,
-    valueProposition: `${lead.name} already commands high local quality. By adding a website, they can automate inquiries, capture search results from google maps, and double their client engagement with an elegant digital portal.`,
-    suggestedFeatures: [
-      "Online Booking & Scheduling Portal",
-      "Mobile-responsive Contact Forms",
-      "Interactive Menu / Portfolios",
-      "Google Maps & Customer Review Slider"
-    ]
+  let phoneScript = `Hi there! I was looking up ${lead.category} services in ${lead.city} and came across ${lead.name}. Your local customer reviews look absolutely incredible! 
+
+I noticed that you don't have a direct website online yet for booking/viewing details. I actually design responsive mobile pages for local owners to save them hours on telephone scheduling. If I sent you a quick, free visual draft I made of what your business website could look like, would you be open to taking a look?`;
+
+  let valueProposition = `${lead.name} already commands high local quality. By adding a website, they can automate inquiries, capture search results from google maps, and double their client engagement with an elegant digital portal.`;
+
+  let suggestedFeatures = [
+    "Online Booking & Scheduling Portal",
+    "Mobile-responsive Contact Forms",
+    "Interactive Menu / Portfolios",
+    "Google Maps & Customer Review Slider"
+  ];
+
+  if (variant === "value-first") {
+    emailSubject = `Providing a Free Competitive SEO & SWOT Audit for ${lead.name}`;
+    emailBody = `Dear ${lead.name} Team,
+
+I've put together a complimentary regional SWOT analysis and local SEO rank report for your ${lead.category} business in ${lead.city}. 
+
+Specifically, we identified three major competitor advantages you could easily bypass by adding an independent reservation landing page and direct client review funnels. 
+
+I'd love to send over the full report and live layout mockup. Is there a good email or phone line to send this over?
+
+Best,
+LeadsRadar Specialist`;
+  } else if (variant === "question-based") {
+    emailSubject = `Quick question about local search rankings in ${lead.city} for ${lead.name}`;
+    emailBody = `Dear ${lead.name} Team,
+
+I notice that when customers search for high-quality ${lead.category} services in ${lead.city}, your competitor listings are occupying the top web ranks while your brand is hidden from the map. 
+
+Is this a deliberate choice to limit incoming digital customer flows, or would you be open to a brief look at an automated map rank setup that would place your phone line and booking system directly on the first page?
+
+Best regards,
+Outreach Partner`;
+  }
+
+  // Basic localized translations for high-fidelity fallbacks
+  if (isGer) {
+    emailSubject = `Digitalisierung & Online-Buchung für ${lead.name} in ${lead.city}`;
+    if (variant === "value-first") {
+      emailSubject = `Kostenlose SEO- & SWOT-Analyse für Ihr Geschäft: ${lead.name}`;
+    } else if (variant === "question-based") {
+      emailSubject = `Kurze Frage zu Ihren Google-Suchplatzierungen in ${lead.city}`;
+    }
+    emailBody = `Sehr geehrtes Team von ${lead.name},
+
+wir haben eine lokale Wettbewerbsanalyse für Ihr ${lead.category}-Geschäft erstellt. Uns ist aufgefallen, dass Sie noch über keine eigene Website verfügen, wodurch wertvolle Buchungen verloren gehen.
+
+Mit einer eigenen mobilen Website können Sie Ihre Anfragen automatisieren und direkt neue Kunden gewinnen.
+
+Hätten Sie Zeit für ein kurzes 5-Minuten-Telefonat, um unseren kostenlosen Entwurf anzusehen?
+
+Mit freundlichen Grüßen,
+LeadsRadar Partner`;
+    phoneScript = `Hallo! Ich habe nach ${lead.category} in ${lead.city} gesucht und ${lead.name} gefunden. Ihre Bewertungen sind hervorragend! Haben Sie Interesse an einem kurzen Entwurf für eine eigene Buchungswebsite?`;
+    valueProposition = `${lead.name} erzielt bereits hohe lokale Qualität. Mit einer Website können Sie Reservierungen automatisieren und die Sichtbarkeit verdoppeln.`;
+    suggestedFeatures = ["Online-Buchung & Terminkalender", "Mobil-optimiertes Kontaktformular", "Google Maps Bewertungsslider", "Speisekarte / Servicekatalog"];
+  } else if (isFre) {
+    emailSubject = `Moderniser la présence numérique de ${lead.name} à ${lead.city}`;
+    emailBody = `Bonjour à l'équipe de ${lead.name},
+
+Nous avons remarqué que vous n'avez pas de site internet direct pour votre service de ${lead.category} à ${lead.city}. Vous perdez des clients au profit de plateformes tierces.
+
+Avec un site moderne et un système de réservation directe, vous pouvez augmenter votre chiffre d'affaires.
+
+Seriez-vous disponible pour un appel de 5 minutes ?
+
+Cordialement,
+L'équipe LeadsRadar`;
+  } else if (isSpa) {
+    emailSubject = `Modernizar la presencia digital de ${lead.name} en ${lead.city}`;
+    emailBody = `Hola equipo de ${lead.name},
+
+Hemos visitado su negocio de ${lead.category} en ${lead.city} y notamos que no cuenta con un sitio web oficial. Los clientes digitales no pueden reservar directamente.
+
+Con una página web optimizada para móviles, usted podrá recibir reservas automáticas las 24 horas.
+
+¿Tendría 5 minutos para hablar?
+
+Saludos cordiales,
+LeadsRadar`;
+  } else if (isIta) {
+    emailSubject = `Digitalizzazione e prenotazioni online per ${lead.name} a ${lead.city}`;
+    emailBody = `Gentile team di ${lead.name},
+
+Siamo esperti di marketing digitale per attività locali. Abbiamo analizzato la vostra presenza a ${lead.city} per la categoria ${lead.category}. 
+
+Inserendo un sistema di prenotazione diretta e recensioni integrate, potrete raddoppiare i clienti.
+
+Siete liberi per una breve telefonata di 5 minuti?
+
+Cordiali saluti,
+LeadsRadar`;
+  }
+
+  return {
+    emailSubject,
+    emailBody,
+    phoneScript,
+    valueProposition,
+    suggestedFeatures
   };
 }
 
 // Generate pitch package
 app.post("/api/generate-pitch", async (req, res) => {
-  const { lead } = req.body;
+  const { lead, variant = "direct", language = "English" } = req.body;
 
   if (!lead) {
     return res.status(400).json({ error: "Lead object is required." });
   }
 
   if (!ai) {
-    const promptValueMock = generateFallbackPitch(lead);
+    const promptValueMock = generateFallbackPitch(lead, variant, language);
     await new Promise(resolve => setTimeout(resolve, 800));
     return res.json({ pitch: promptValueMock, source: "mock" });
   }
 
   try {
-    const prompt = `You are a talented B2B digital sales expert. Provide an outreach package for this offline business:
+    const prompt = `You are an expert digital sales copywriter. Generate a personalized sales pitch optimization.
+Target Business Information:
 Business Name: ${lead.name}
 Country: ${lead.country}
 City: ${lead.city}
 Category: ${lead.category}
-Specific Detail: ${lead.notes}
+Key Details: ${lead.notes}
+
+Selected Settings:
+Tone Variant: ${variant} (direct means clear transactional B2B, value-first means leading with complimentary local insights or audits, question-based means starting with an engaging diagnostic ranking question).
+Target Language: ${language} (translate subject, body, script, value proposition and features list into ${language}).
 
 Provide:
-1. A highly catchy email outreach subject line.
-2. An elegant, personalized, short, friendly sales pitch email that emphasizes how beautiful local responsive design can scale their bookings and reputation.
-3. A respectful, non-pushy phone script for introductory cold outreach.
-4. A concise 2-sentence Value Proposition for web designers pitching them.
-5. An array of exactly 4 recommended website features (e.g., SEO local rank keywords, table scheduling, service catalog, before-after slider).
+1. A highly catchy transactional subject line (translate to ${language}).
+2. An elegant, personalized, short, friendly sales outreach pitch email (translate to ${language}).
+3. A respectful, non-pushy phone pitch script (translate to ${language}).
+4. A concise 2-sentence Value Proposition (translate to ${language}).
+5. An array of exactly 4 recommended website features (translate to ${language}).
 
-Return the response strictly as a valid JSON object. No markdown, comments or backticks.
-Schema:
+Return strictly a valid raw JSON object matching the following Schema. Do not include markdown blocks, tags or wrap:
 {
   "emailSubject": "...",
   "emailBody": "...",
@@ -413,7 +534,7 @@ Schema:
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        systemInstruction: "You are a sales engineer. Generate engaging B2B packages in pure JSON format without wrapping.",
+        systemInstruction: "You are a sales engineer. Generate engaging B2B packages in pure JSON format without wrapping. Translate all fields text content to the requested target language.",
       }
     });
 
@@ -430,7 +551,7 @@ Schema:
   } catch (error: any) {
     console.error("Gemini Pitch Generator Error:", error);
     // Fall back gracefully under rate limit or key quota exhaustion
-    const fallbackPitch = generateFallbackPitch(lead);
+    const fallbackPitch = generateFallbackPitch(lead, variant, language);
     res.json({ pitch: fallbackPitch, source: "rate-limit-fallback", error: error.message });
   }
 });// Create subscription Paystack checkout session (falls back to local sandbox in preview mode if secret missing or mismatched)
@@ -585,6 +706,24 @@ app.post("/api/generate-analysis", async (req, res) => {
     return res.status(400).json({ error: "Lead object is required." });
   }
 
+  const mockCompetitors = [
+    { 
+      name: `${lead.name} Rivals Hub`, 
+      website: `https://best-${lead.category.replace(/\s+/g, "").toLowerCase()}-${lead.city.toLowerCase()}.com`, 
+      missedAdvantage: "Features premium customized appointment form and ranks first on Search Engine Local Pack." 
+    },
+    { 
+      name: `Elite ${lead.category} Lounge`, 
+      website: `https://elite-${lead.category.replace(/\s+/g, "").toLowerCase()}.com`, 
+      missedAdvantage: "Operates digital reservation portal which increases weekly client conversion rate by 28%." 
+    },
+    { 
+      name: `The Local ${lead.category} Co.`, 
+      website: `https://thelocal${lead.category.replace(/\s+/g, "").toLowerCase()}${lead.city.toLowerCase()}.de`, 
+      missedAdvantage: "Presents direct contact funnel synced with automated SMS reminder lines." 
+    }
+  ];
+
   if (!ai) {
     // Generate static comprehensive fallback structure
     await new Promise(resolve => setTimeout(resolve, 800));
@@ -602,7 +741,8 @@ app.post("/api/generate-analysis", async (req, res) => {
           competitorCount: "approx. 7 nearby listings with active web booking",
           rankDifficulty: "Low-Medium (Page 1 ranking achievable in under 15 days)"
         },
-        digitalStrategy: `Build an elegant, high-speed single-page site featuring local grid highlights, a streamlined reservation widget, and responsive mobile scheduling.`
+        digitalStrategy: `Build an elegant, high-speed single-page site featuring local grid highlights, a streamlined reservation widget, and responsive mobile scheduling.`,
+        competitors: mockCompetitors
       },
       source: "mock"
     });
@@ -616,6 +756,8 @@ City: ${lead.city}
 Specific Context: ${lead.notes}
 
 Provide highly realistic estimations for regional search traffic loss and specific SWOT items.
+Also find or fabricate 3 actual or highly realistic top competitors for this business category in ${lead.city}, listing their web domains and the key digital advantage they have that our target lead is missing out on.
+
 Return strictly a valid raw JSON object. Do not include markdown wraps, ticks or text wrapping.
 Strict Schema:
 {
@@ -631,7 +773,12 @@ Strict Schema:
     "competitorCount": "...",
     "rankDifficulty": "..."
   },
-  "digitalStrategy": "..."
+  "digitalStrategy": "...",
+  "competitors": [
+    { "name": "...", "website": "https://...", "missedAdvantage": "..." },
+    { "name": "...", "website": "https://...", "missedAdvantage": "..." },
+    { "name": "...", "website": "https://...", "missedAdvantage": "..." }
+  ]
 }`;
 
     const response = await ai.models.generateContent({
@@ -643,12 +790,16 @@ Strict Schema:
     });
 
     const text = response.text ? response.text.trim() : "{}";
-    let analysis = {};
+    let analysis: any = {};
     try {
       analysis = JSON.parse(text);
     } catch (e) {
       const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       analysis = JSON.parse(cleanText);
+    }
+
+    if (!analysis.competitors) {
+      analysis.competitors = mockCompetitors;
     }
 
     res.json({ analysis, source: "gemini" });
@@ -668,7 +819,8 @@ Strict Schema:
           competitorCount: "approx. 5 modern competitors in the neighborhood",
           rankDifficulty: "Low"
         },
-        digitalStrategy: "Present a working visual site draft demonstrating scheduled notification triggers to easily overcome typical objection patterns."
+        digitalStrategy: "Present a working visual site draft demonstrating scheduled notification triggers to easily overcome typical objection patterns.",
+        competitors: mockCompetitors
       },
       source: "rate-limit-fallback",
       error: error.message
@@ -732,6 +884,225 @@ What specific objection or pricing strategy would you like us to detail next?`;
       source: "rate-limit-fallback",
       error: error.message
     });
+  }
+});
+
+
+// --- Gmail Cryptography & API Integrations ---
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "aistudio_secure_encryption_key_32bytes"; // Fallback identifier
+const IV_LENGTH = 16;
+
+function encrypt(text: string): string {
+  const key = Buffer.alloc(32);
+  Buffer.from(ENCRYPTION_KEY).copy(key);
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+  let encrypted = cipher.update(text);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  return iv.toString("hex") + ":" + encrypted.toString("hex");
+}
+
+function decrypt(text: string): string {
+  const key = Buffer.alloc(32);
+  Buffer.from(ENCRYPTION_KEY).copy(key);
+  const parts = text.split(":");
+  const iv = Buffer.from(parts.shift() || "", "hex");
+  const encryptedText = Buffer.from(parts.join(":"), "hex");
+  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
+  let decrypted = decipher.update(encryptedText);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString();
+}
+
+app.post("/api/gmail/connect", async (req, res) => {
+  const { uid, email, token } = req.body;
+  if (!uid || !token) {
+    return res.status(400).json({ error: "UID and token are required." });
+  }
+  try {
+    const encryptedToken = encrypt(token);
+    // Save to Firestore users collection
+    if (db) {
+      const userRef = fsDoc(db, "users", uid);
+      await fsSetDoc(userRef, {
+        encryptedGmailToken: encryptedToken,
+        gmailConnected: true,
+        gmailEmail: email || null
+      }, { merge: true });
+      console.log(`Saved encrypted Gmail token for user: ${uid}`);
+    }
+    res.json({ success: true, encryptedToken });
+  } catch (err: any) {
+    console.error("Connect Gmail API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/gmail/send", async (req, res) => {
+  const { uid, to, subject, body } = req.body;
+  if (!uid || !to || !subject || !body) {
+    return res.status(400).json({ error: "Missing required params: uid, to, subject, body." });
+  }
+  try {
+    if (!db) {
+      throw new Error("Firestore server is not configured.");
+    }
+    const userRef = fsDoc(db, "users", uid);
+    const userSnap = await fsGetDoc(userRef);
+    if (!userSnap.exists()) {
+      throw new Error("User profile not found in database.");
+    }
+    const data = userSnap.data();
+    if (!data.gmailConnected || !data.encryptedGmailToken) {
+      throw new Error("Gmail service is not connected for this user.");
+    }
+    
+    // Decrypt token
+    const decryptedToken = decrypt(data.encryptedGmailToken);
+    
+    // Build RFC 822 email format
+    const emailMsg = [
+      `To: ${to}`,
+      `Subject: =?utf-8?B?${Buffer.from(subject).toString('base64')}?=`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: 7bit',
+      '',
+      body
+    ].join('\r\n');
+    
+    const base64Raw = Buffer.from(emailMsg)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+       
+    // Post to Google API users.me.messages.send
+    const gmailResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${decryptedToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ raw: base64Raw })
+    });
+    
+    if (!gmailResponse.ok) {
+      const errBody = await gmailResponse.text();
+      console.error("Gmail Google API response error:", errBody);
+      return res.status(gmailResponse.status).json({ 
+        error: `Google API Error: ${errBody}`,
+        suggestReconnect: gmailResponse.status === 401
+      });
+    }
+    
+    const gmailResult = await gmailResponse.json() as any;
+    console.log(`Email successfully sent directly via Gmail API to: ${to}, ID: ${gmailResult.id}`);
+    res.json({ success: true, messageId: gmailResult.id });
+  } catch (err: any) {
+    console.error("Send Gmail API error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/gmail/check-replies", async (req, res) => {
+  const { uid, leadEmail } = req.body;
+  if (!uid || !leadEmail) {
+    return res.status(400).json({ error: "Missing required params: uid, leadEmail." });
+  }
+  try {
+    if (!db) {
+      throw new Error("Firestore server is not configured.");
+    }
+    const userRef = fsDoc(db, "users", uid);
+    const userSnap = await fsGetDoc(userRef);
+    if (!userSnap.exists()) {
+      throw new Error("User profile not found.");
+    }
+    const data = userSnap.data();
+    
+    // Handle Outlook Sandbox fallback if Outlook connected
+    if (data.outlookConnected && leadEmail.includes(".local")) {
+      const simulatedReply = `Hi, thank you for reaching out! Your portfolio draft looks impressive. We are quite busy but could find 10 minutes next Tuesday at 2 PM for a quick phone call. Let me know if that works.`;
+      
+      const suggestionsPrompt = `The customer sent this reply email to us: "${simulatedReply}".
+Craft a short, polite, professional follow-up suggestion confirming next Tuesday at 2 PM as a suggested answer for the web designer.
+Write only the email body response, and keep it friendly and short.`;
+      
+      let suggestedAnswer = "Hi, that sounds perfect! I've booked our meeting for next Tuesday, May 30th at 2:00 PM. Looking forward to speaking with you then!";
+      if (ai) {
+        const aiRes = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: suggestionsPrompt,
+        });
+        suggestedAnswer = aiRes.text || suggestedAnswer;
+      }
+      
+      return res.json({ 
+        hasReply: true, 
+        replySnippet: simulatedReply, 
+        suggestedReply: suggestedAnswer 
+      });
+    }
+
+    if (!data.gmailConnected || !data.encryptedGmailToken) {
+      return res.json({ hasReply: false });
+    }
+    
+    const decryptedToken = decrypt(data.encryptedGmailToken);
+    
+    // Fetch threads or messages with search constraint from lead
+    const listResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=from:${leadEmail}`, {
+      headers: { "Authorization": `Bearer ${decryptedToken}` }
+    });
+    
+    if (!listResponse.ok) {
+      return res.json({ hasReply: false });
+    }
+    
+    const listData = await listResponse.json() as any;
+    if (!listData.messages || listData.messages.length === 0) {
+      return res.json({ hasReply: false });
+    }
+    
+    const msgId = listData.messages[0].id;
+    const msgResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}`, {
+      headers: { "Authorization": `Bearer ${decryptedToken}` }
+    });
+    
+    if (!msgResponse.ok) {
+      return res.json({ hasReply: false });
+    }
+    
+    const msgData = await msgResponse.json() as any;
+    const replySnippet = msgData.snippet || "";
+    
+    const suggestionsPrompt = `You are an expert Sales Coach advising on B2B lead follow-up. The client sent this email in response:
+Snippet: "${replySnippet}"
+
+Craft a professional, friendly response that builds rapport and advances the sale. State the direct reply body. Limit it to 3-4 simple sentences.`;
+    
+    let suggestedReply = "Hi, thanks for getting back to me! I would love to connect for a 5-minute chat. Would this Friday at 11 AM work for you, or is there another date you prefer?";
+    if (ai) {
+      try {
+        const aiResponse = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: suggestionsPrompt,
+        });
+        suggestedReply = aiResponse.text || suggestedReply;
+      } catch (aiErr) {
+        console.error("Gemini AI reply helper failure:", aiErr);
+      }
+    }
+    
+    res.json({ 
+      hasReply: true, 
+      replySnippet, 
+      suggestedReply 
+    });
+  } catch (err: any) {
+    console.error("Check replies error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

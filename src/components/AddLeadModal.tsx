@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Building2, Globe, MapPin, Phone, Mail, ClipboardList, Plus } from 'lucide-react';
 import { BusinessLead, CountryType, LeadStatus } from '../types';
 
@@ -8,6 +8,15 @@ interface AddLeadModalProps {
 }
 
 export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) {
+  // Lock background body scroll to eliminate jitter
+  useEffect(() => {
+    const originalStyle = window.getComputedStyle(document.body).overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
+  }, []);
+
   const [name, setName] = useState('');
   const [country, setCountry] = useState<CountryType>('USA');
   const [city, setCity] = useState('');

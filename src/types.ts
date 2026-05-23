@@ -13,6 +13,7 @@ export interface ActivityLogItem {
 export interface BusinessLead {
   id: string;
   name: string;
+  emailSent?: boolean;
   country: CountryType;
   city: string;
   address?: string;
@@ -46,6 +47,11 @@ export interface BusinessLead {
       rankDifficulty: string;
     };
     digitalStrategy: string;
+    competitors?: {
+      name: string;
+      website: string;
+      missedAdvantage: string;
+    }[];
   };
 }
 

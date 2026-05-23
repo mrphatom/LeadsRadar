@@ -23,6 +23,10 @@ export interface UserProfile {
   trialExpires?: string;
   subscriptionId?: string;
   createdAt?: string;
+  gmailConnected?: boolean;
+  gmailEmail?: string | null;
+  outlookConnected?: boolean;
+  outlookEmail?: string | null;
 }
 
 interface AuthContextType {
@@ -39,6 +43,11 @@ interface AuthContextType {
     trialExpires?: string, 
     subId?: string
   ) => Promise<void>;
+  gmailAccessToken: string | null;
+  connectGmail: () => Promise<void>;
+  disconnectGmail: () => Promise<void>;
+  connectOutlook: (email: string) => Promise<void>;
+  disconnectOutlook: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -89,7 +98,22 @@ const initializeNewUserProfileAndLeads = async (
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    const cachedTier = typeof window !== 'undefined' ? localStorage.getItem('leadsradar_subscription_tier') : null;
+    if (cachedTier === 'pro' || cachedTier === 'free') {
+      return {
+        uid: '',
+        email: '',
+        displayName: 'Outreach Member',
+        photoURL: '',
+        subscriptionTier: cachedTier as 'free' | 'pro',
+        subscriptionPeriod: 'none',
+        trialExpires: '',
+        subscriptionId: ''
+      };
+    }
+    return null;
+  });
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -117,16 +141,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
+            const resolvedTier = data.subscriptionTier || 'free';
+            localStorage.setItem('leadsradar_subscription_tier', resolvedTier);
             setProfile({
               uid: data.uid,
               email: data.email,
               displayName: data.displayName,
               photoURL: data.photoURL,
-              subscriptionTier: data.subscriptionTier || 'free',
+              subscriptionTier: resolvedTier as 'free' | 'pro',
               subscriptionPeriod: data.subscriptionPeriod || 'none',
               trialExpires: data.trialExpires || '',
               subscriptionId: data.subscriptionId || '',
-              createdAt: data.createdAt
+              createdAt: data.createdAt,
+              gmailConnected: data.gmailConnected || false,
+              gmailEmail: data.gmailEmail || null,
+              outlookConnected: data.outlookConnected || false,
+              outlookEmail: data.outlookEmail || null
             });
           } else {
             setProfile(null);
@@ -134,12 +164,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
         }, (err) => {
           console.error("User profile database sync error:", err);
+          const cachedTier = (localStorage.getItem('leadsradar_subscription_tier') as 'free' | 'pro') || 'free';
           // Standard structural fallback for profiles
           setProfile({
             uid: currentUser.uid,
             email: currentUser.email || '',
             displayName: currentUser.displayName || 'Outreach Member',
-            subscriptionTier: 'free',
+            subscriptionTier: cachedTier,
             subscriptionPeriod: 'none'
           });
           setLoading(false);
@@ -213,6 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     subId: string = ''
   ) => {
     if (!user) return;
+    localStorage.setItem('leadsradar_subscription_tier', tier);
     const userRef = doc(db, 'users', user.uid);
     try {
       await setDoc(userRef, {
@@ -231,6 +263,100 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const [gmailAccessToken, setGmailAccessToken] = useState<string | null>(null);
+
+  const connectGmail = async () => {
+    if (!user) return;
+    const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/gmail.send');
+    provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+    
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const token = credential?.accessToken;
+      const verifiedEmail = result.user.email || user.email || '';
+      if (!token) {
+        throw new Error("No Google credentials token returned.");
+      }
+      
+      setGmailAccessToken(token);
+
+      // Perform secure encryption storage on backend proxy
+      const response = await fetch('/api/gmail/connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          uid: user.uid,
+          email: verifiedEmail,
+          token: token
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Local backend rejected securing encrypted refresh secrets.");
+      }
+      
+      // Update local profile document flag directly to trigger realtime sync
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        gmailConnected: true,
+        gmailEmail: verifiedEmail
+      }, { merge: true });
+
+    } catch (err) {
+      console.error("connectGmail action crash:", err);
+      throw err;
+    }
+  };
+
+  const disconnectGmail = async () => {
+    if (!user) return;
+    try {
+      setGmailAccessToken(null);
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        gmailConnected: false,
+        gmailEmail: null,
+        encryptedGmailToken: null
+      }, { merge: true });
+    } catch (err) {
+      console.error("disconnectGmail action crash:", err);
+      throw err;
+    }
+  };
+
+  const connectOutlook = async (outlookEmail: string) => {
+    if (!user) return;
+    try {
+      // Mock Sandbox outlook persistence
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        outlookConnected: true,
+        outlookEmail: outlookEmail
+      }, { merge: true });
+    } catch (err) {
+      console.error("connectOutlook action error:", err);
+      throw err;
+    }
+  };
+
+  const disconnectOutlook = async () => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        outlookConnected: false,
+        outlookEmail: null
+      }, { merge: true });
+    } catch (err) {
+      console.error("disconnectOutlook action error:", err);
+      throw err;
+    }
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -240,7 +366,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signInWithEmail, 
       signUpWithEmail, 
       logout,
-      updateUserSubscription
+      updateUserSubscription,
+      gmailAccessToken,
+      connectGmail,
+      disconnectGmail,
+      connectOutlook,
+      disconnectOutlook
     }}>
       {children}
     </AuthContext.Provider>

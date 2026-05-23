@@ -46,7 +46,14 @@ service cloud.firestore {
         && (!('subscriptionTier' in user) || (user.subscriptionTier is string && user.subscriptionTier.size() <= 32))
         && (!('subscriptionPeriod' in user) || (user.subscriptionPeriod is string && user.subscriptionPeriod.size() <= 32))
         && (!('subscriptionId' in user) || (user.subscriptionId is string && user.subscriptionId.size() <= 128))
-        && (!('trialExpires' in user) || (user.trialExpires is string && user.trialExpires.size() <= 128));
+        && (!('trialExpires' in user) || (user.trialExpires is string && user.trialExpires.size() <= 128))
+        && (!('createdAt' in user) || (user.createdAt is string && user.createdAt.size() <= 128))
+        && (!('gmailConnected' in user) || (user.gmailConnected is bool))
+        && (!('gmailEmail' in user) || (user.gmailEmail is string && user.gmailEmail.size() <= 256))
+        && (!('encryptedGmailToken' in user) || (user.encryptedGmailToken is string && user.encryptedGmailToken.size() <= 2048))
+        && (!('outlookConnected' in user) || (user.outlookConnected is bool))
+        && (!('outlookEmail' in user) || (user.outlookEmail is string && user.outlookEmail.size() <= 256))
+        && (!('encryptedOutlookToken' in user) || (user.encryptedOutlookToken is string && user.encryptedOutlookToken.size() <= 2048));
     }
 
     // --- Business Leads ---
@@ -66,7 +73,7 @@ service cloud.firestore {
         && incoming().ownerId == existing().ownerId
         && (
           // Action list allowable
-          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'outreachScript', 'outreachScriptSource', 'activityLog'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'outreachScript', 'outreachScriptSource', 'activityLog', 'emailSent'])
         );
 
       allow delete: if isSignedIn() && isOwner(existing().ownerId);
@@ -92,7 +99,8 @@ service cloud.firestore {
         && lead.status in ['new', 'contacted', 'proposal', 'negotiating', 'won', 'rejected']
         && lead.createdAt is string
         && (!('address' in lead) || (lead.address is string && lead.address.size() <= 512))
-        && (!('outreachScriptSource' in lead) || (lead.outreachScriptSource is string && lead.outreachScriptSource.size() <= 64));
+        && (!('outreachScriptSource' in lead) || (lead.outreachScriptSource is string && lead.outreachScriptSource.size() <= 64))
+        && (!('emailSent' in lead) || (lead.emailSent is bool));
     }
 
     // --- Search Queries ---
