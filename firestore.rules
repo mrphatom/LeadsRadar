@@ -73,7 +73,9 @@ service cloud.firestore {
         && incoming().ownerId == existing().ownerId
         && (
           // Action list allowable
-          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'outreachScript', 'outreachScriptSource', 'activityLog', 'emailSent'])
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'notes', 'outreachScript', 'outreachScriptSource', 'activityLog', 'emailSent', 'tags', 'analysis'
+          ])
         );
 
       allow delete: if isSignedIn() && isOwner(existing().ownerId);
@@ -87,7 +89,8 @@ service cloud.firestore {
         && lead.ownerId == request.auth.uid
         && lead.name is string
         && lead.name.size() <= 256
-        && lead.country in ['USA', 'UK', 'Germany', 'Canada']
+        && lead.country is string
+        && lead.country.size() <= 128
         && lead.city is string
         && lead.city.size() <= 128
         && lead.category is string
@@ -98,9 +101,14 @@ service cloud.firestore {
         && lead.email.size() <= 256
         && lead.status in ['new', 'contacted', 'proposal', 'negotiating', 'won', 'rejected']
         && lead.createdAt is string
+        && (!('notes' in lead) || (lead.notes is string))
         && (!('address' in lead) || (lead.address is string && lead.address.size() <= 512))
         && (!('outreachScriptSource' in lead) || (lead.outreachScriptSource is string && lead.outreachScriptSource.size() <= 64))
-        && (!('emailSent' in lead) || (lead.emailSent is bool));
+        && (!('emailSent' in lead) || (lead.emailSent is bool))
+        && (!('tags' in lead) || (lead.tags is list))
+        && (!('activityLog' in lead) || (lead.activityLog is list))
+        && (!('outreachScript' in lead) || (lead.outreachScript is map))
+        && (!('analysis' in lead) || (lead.analysis is map));
     }
 
     // --- Search Queries ---

@@ -5,8 +5,8 @@ import fs from "fs";
 import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
-import { initializeApp as initFirebase } from "firebase/app";
-import { getFirestore as initFirestore, doc as fsDoc, getDoc as fsGetDoc, setDoc as fsSetDoc, updateDoc as fsUpdateDoc } from "firebase/firestore";
+import { initializeApp as initAdminApp, getApps, getApp } from "firebase-admin/app";
+import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 // Stripe import removed
 
 dotenv.config();
@@ -20,9 +20,14 @@ try {
   if (fs.existsSync(configPath)) {
     const configRaw = fs.readFileSync(configPath, "utf8");
     const firebaseConfig = JSON.parse(configRaw);
-    const firebaseApp = initFirebase(firebaseConfig);
-    db = initFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || undefined);
-    console.log("Firestore successfully initialized on Node server wrapper.");
+    
+    // Initialize Admin SDK to run with service default credentials (bypassing rules)
+    const adminApp = getApps().length === 0
+      ? initAdminApp({ projectId: firebaseConfig.projectId })
+      : getApp();
+
+    db = getAdminFirestore(adminApp, firebaseConfig.firestoreDatabaseId || undefined);
+    console.log("Admin Firestore successfully initialized on Node server wrapper.");
   } else {
     console.warn("No firebase-applet-config.json configuration detected.");
   }
@@ -923,8 +928,7 @@ app.post("/api/gmail/connect", async (req, res) => {
     const encryptedToken = encrypt(token);
     // Save to Firestore users collection
     if (db) {
-      const userRef = fsDoc(db, "users", uid);
-      await fsSetDoc(userRef, {
+      await db.collection("users").doc(uid).set({
         encryptedGmailToken: encryptedToken,
         gmailConnected: true,
         gmailEmail: email || null
@@ -947,9 +951,8 @@ app.post("/api/gmail/send", async (req, res) => {
     if (!db) {
       throw new Error("Firestore server is not configured.");
     }
-    const userRef = fsDoc(db, "users", uid);
-    const userSnap = await fsGetDoc(userRef);
-    if (!userSnap.exists()) {
+    const userSnap = await db.collection("users").doc(uid).get();
+    if (!userSnap.exists) {
       throw new Error("User profile not found in database.");
     }
     const data = userSnap.data();
@@ -1014,9 +1017,8 @@ app.post("/api/gmail/check-replies", async (req, res) => {
     if (!db) {
       throw new Error("Firestore server is not configured.");
     }
-    const userRef = fsDoc(db, "users", uid);
-    const userSnap = await fsGetDoc(userRef);
-    if (!userSnap.exists()) {
+    const userSnap = await db.collection("users").doc(uid).get();
+    if (!userSnap.exists) {
       throw new Error("User profile not found.");
     }
     const data = userSnap.data();

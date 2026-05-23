@@ -48,7 +48,6 @@
         },
         "country": {
           "type": "string",
-          "enum": ["USA", "UK", "Germany", "Canada"],
           "description": "Territory where business is operating."
         },
         "city": {
