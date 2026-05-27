@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from './AuthProvider';
 import { Sparkles, Mail, Lock, User, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
+// @ts-ignore
+import brandLogo from '../assets/images/logo_1779885424761.png';
 
 export const AuthView: React.FC = () => {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
@@ -66,8 +68,13 @@ export const AuthView: React.FC = () => {
         
         {/* Logo Panel */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 shadow-xl">
-            <Sparkles className="h-8 w-8 text-orange-500" />
+          <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-zinc-900 border border-zinc-800 p-0 mb-4 shadow-xl overflow-hidden">
+            <img 
+              src={brandLogo} 
+              alt="LeadsRadar Logo" 
+              className="h-full w-full object-cover"
+              referrerPolicy="no-referrer"
+            />
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white">LeadsRadar</h1>
           <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">

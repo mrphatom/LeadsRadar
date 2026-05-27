@@ -17,6 +17,8 @@ import CheckoutSandbox from './components/CheckoutSandbox';
 import SubscriptionModal from './components/SubscriptionModal';
 import { PREPOPULATED_LEADS } from './seedData';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
+// @ts-ignore
+import brandLogo from './assets/images/logo_1779885424761.png';
 import { 
   collection, 
   query, 
@@ -41,6 +43,23 @@ function AppContent() {
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [paystackSuccessNotice, setPaystackSuccessNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    document.title = "LeadsRadar | AI-Driven Outreach Lead Generator";
+    
+    // Set favicon dynamically
+    let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.type = 'image/png';
+      link.rel = 'shortcut icon';
+      document.getElementsByTagName('head')[0].appendChild(link);
+    } else {
+      link.rel = 'shortcut icon';
+      link.type = 'image/png';
+    }
+    link.href = brandLogo;
+  }, []);
 
   useEffect(() => {
     if (window.location.pathname === '/billing-success' && user) {
@@ -602,8 +621,13 @@ function AppContent() {
           <div className="flex items-center justify-between w-full md:w-auto">
             {/* Branded Identity */}
             <div className="flex items-center gap-2.5">
-              <div className="bg-orange-500 text-zinc-950 p-2 rounded-xl flex items-center justify-center font-bold shadow-md shadow-orange-500/10 shrink-0">
-                <Building2 className="h-5 w-5" />
+              <div className="h-9 w-9 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden flex items-center justify-center shadow-md shadow-orange-500/5 shrink-0">
+                <img 
+                  src={brandLogo} 
+                  alt="LeadsRadar" 
+                  className="h-full w-full object-cover" 
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <div>
                 <span className="text-lg md:text-xl font-extrabold text-white tracking-tight block">
