@@ -129,6 +129,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(currentUser);
         const userRef = doc(db, 'users', currentUser.uid);
 
+        // Fetch user specific tier from cache
+        const userSpecificKey = `leadsradar_subscription_tier_${currentUser.uid}`;
+        let cachedTier = localStorage.getItem(userSpecificKey) as 'free' | 'pro' | null;
+        if (!cachedTier) {
+          cachedTier = (localStorage.getItem('leadsradar_subscription_tier') as 'free' | 'pro' | null) || 'free';
+          localStorage.setItem(userSpecificKey, cachedTier);
+        }
+
+        // Proactively set a solid profile details with cached tier in case we have sync hurdles
+        setProfile({
+          uid: currentUser.uid,
+          email: currentUser.email || '',
+          displayName: currentUser.displayName || 'Outreach Member',
+          photoURL: currentUser.photoURL || '',
+          subscriptionTier: cachedTier,
+          subscriptionPeriod: 'none',
+          trialExpires: '',
+          subscriptionId: ''
+        });
+
         // Safely register or seeds the profile only if it does not exist already
         await initializeNewUserProfileAndLeads(
           currentUser.uid,
@@ -143,6 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const data = docSnap.data();
             const resolvedTier = data.subscriptionTier || 'free';
             localStorage.setItem('leadsradar_subscription_tier', resolvedTier);
+            localStorage.setItem(userSpecificKey, resolvedTier);
             setProfile({
               uid: data.uid,
               email: data.email,
@@ -159,19 +180,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               outlookEmail: data.outlookEmail || null
             });
           } else {
-            setProfile(null);
+            // DB record isn't seeded successfully yet, fallback gracefully to our healthy in-memory cache
+            const freshCachedTier = (localStorage.getItem(userSpecificKey) as 'free' | 'pro') || 'free';
+            setProfile({
+              uid: currentUser.uid,
+              email: currentUser.email || '',
+              displayName: currentUser.displayName || 'Outreach Member',
+              photoURL: currentUser.photoURL || '',
+              subscriptionTier: freshCachedTier,
+              subscriptionPeriod: 'none',
+              trialExpires: '',
+              subscriptionId: ''
+            });
           }
           setLoading(false);
         }, (err) => {
-          console.error("User profile database sync error:", err);
-          const cachedTier = (localStorage.getItem('leadsradar_subscription_tier') as 'free' | 'pro') || 'free';
+          console.error("User profile database sync error (permission denied or connection missing):", err);
+          const freshCachedTier = (localStorage.getItem(userSpecificKey) as 'free' | 'pro') || 'free';
           // Standard structural fallback for profiles
           setProfile({
             uid: currentUser.uid,
             email: currentUser.email || '',
             displayName: currentUser.displayName || 'Outreach Member',
-            subscriptionTier: cachedTier,
-            subscriptionPeriod: 'none'
+            subscriptionTier: freshCachedTier,
+            subscriptionPeriod: 'none',
+            trialExpires: '',
+            subscriptionId: ''
           });
           setLoading(false);
         });
@@ -245,6 +279,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ) => {
     if (!user) return;
     localStorage.setItem('leadsradar_subscription_tier', tier);
+    localStorage.setItem(`leadsradar_subscription_tier_${user.uid}`, tier);
     const userRef = doc(db, 'users', user.uid);
     try {
       await setDoc(userRef, {

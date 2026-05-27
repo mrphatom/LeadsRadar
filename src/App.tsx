@@ -95,6 +95,23 @@ function AppContent() {
 
     setSyncing(true);
 
+    // Initial load from local fallbacks to ensure instant display
+    const fallbackLeadsKey = `fallback_leads_${user.uid}`;
+    const fallbackQueriesKey = `fallback_queries_${user.uid}`;
+    
+    try {
+      const cachedLeads = localStorage.getItem(fallbackLeadsKey);
+      if (cachedLeads) {
+        setLeads(JSON.parse(cachedLeads));
+      }
+      const cachedQueries = localStorage.getItem(fallbackQueriesKey);
+      if (cachedQueries) {
+        setPastQueries(JSON.parse(cachedQueries));
+      }
+    } catch (err) {
+      console.warn("Failed to load local cached leads/queries fallbacks:", err);
+    }
+
     // 1. Snapshot Listener for B2B Leads
     const leadsQuery = query(collection(db, 'leads'), where('ownerId', '==', user.uid));
     const unsubscribeLeads = onSnapshot(leadsQuery, (snapshot) => {
@@ -105,10 +122,17 @@ function AppContent() {
 
       // Sort chronological descending
       loadedLeads.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      try {
+        localStorage.setItem(fallbackLeadsKey, JSON.stringify(loadedLeads));
+      } catch (err) {
+        console.warn("Failed to update local cached leads backup:", err);
+      }
+
       setLeads(loadedLeads);
       setSyncing(false);
     }, (error) => {
-      console.warn("Background leads database sync failed gently:", error);
+      console.warn("Background leads database sync failed gently (permissions/connection issues):", error);
       setSyncing(false);
     });
 
@@ -121,9 +145,16 @@ function AppContent() {
       });
       // Sort newest first
       loadedQueries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+      try {
+        localStorage.setItem(fallbackQueriesKey, JSON.stringify(loadedQueries));
+      } catch (err) {
+        console.warn("Failed to update local cached queries backup:", err);
+      }
+
       setPastQueries(loadedQueries);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'queries');
+      console.warn("Background scan queries database sync failed gently:", error);
     });
 
     return () => {
@@ -142,91 +173,149 @@ function AppContent() {
   ) => {
     if (!user) return;
     const queryId = `query_${Date.now()}`;
+    const queryObj = {
+      id: queryId,
+      userId: user.uid,
+      city,
+      country,
+      category,
+      discoveredCount,
+      source,
+      timestamp: new Date().toISOString()
+    };
+
+    // Proactively update UI state instantly
+    setPastQueries(prev => {
+      const updated = [queryObj, ...prev];
+      try {
+        localStorage.setItem(`fallback_queries_${user.uid}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Failed to set proactive local queries search log:", e);
+      }
+      return updated;
+    });
+
     const queryRef = doc(db, 'queries', queryId);
     try {
-      await setDoc(queryRef, {
-        id: queryId,
-        userId: user.uid,
-        city,
-        country,
-        category,
-        discoveredCount,
-        source,
-        timestamp: new Date().toISOString()
-      });
+      await setDoc(queryRef, queryObj);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `queries/${queryId}`);
+      console.warn("Failed to log query in remote db, local proactive query list preserved:", err);
     }
   };
 
   // Add new crawl discoveries directly to user Firestore db
   const handleLeadsDiscovered = async (newLeads: BusinessLead[], source: string) => {
     if (!user) return;
-    try {
-      const batch = writeBatch(db);
-      newLeads.forEach(newL => {
-        // Prevent naming collision duplication
-        const alreadyListed = leads.some(l => 
-          l.name.toLowerCase() === newL.name.toLowerCase() || 
-          (l.phone && l.phone === newL.phone)
+
+    const formattedDiscoveries = newLeads.map((newL, index) => {
+      const leadId = newL.id || `lead_crawl_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 5)}`;
+      return {
+        ...newL,
+        id: leadId,
+        ownerId: user.uid,
+        status: newL.status || 'new',
+        createdAt: newL.createdAt || new Date().toISOString(),
+        activityLog: newL.activityLog || [
+          {
+            id: `log_crawler_${Date.now()}_${index}`,
+            type: 'note' as const,
+            timestamp: new Date().toISOString(),
+            title: 'Discovered via Search Grounding',
+            detail: `Prospect index fetched from web crawl sources (${source}).`
+          }
+        ]
+      };
+    });
+
+    // Proactively update local UI state instantly
+    setLeads(prev => {
+      const updated = [...prev];
+      formattedDiscoveries.forEach(fd => {
+        const alreadyListed = updated.some(l => 
+          l.name.toLowerCase() === fd.name.toLowerCase() || 
+          (l.phone && l.phone === fd.phone)
         );
         if (!alreadyListed) {
-          const leadId = `lead_crawl_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-          const leadRef = doc(db, 'leads', leadId);
-          batch.set(leadRef, {
-            ...newL,
-            id: leadId,
-            ownerId: user.uid,
-            status: 'new',
-            createdAt: new Date().toISOString(),
-            activityLog: newL.activityLog || [
-              {
-                id: `log_crawler_${Date.now()}`,
-                type: 'note',
-                timestamp: new Date().toISOString(),
-                title: 'Discovered via Search Grounding',
-                detail: `Prospect index fetched from web crawl sources (${source}).`
-              }
-            ]
-          });
+          updated.push(fd);
         }
+      });
+      // Sort newest first
+      updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      try {
+        localStorage.setItem(`fallback_leads_${user.uid}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Failed to save proactive local discoveries list:", e);
+      }
+      return updated;
+    });
+
+    try {
+      const batch = writeBatch(db);
+      formattedDiscoveries.forEach(fd => {
+        const leadRef = doc(db, 'leads', fd.id);
+        batch.set(leadRef, fd);
       });
       await batch.commit();
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'leads');
+      console.warn("Failed to batch save discoveries in Firestore, fallback local memory state preserved:", err);
     }
   };
 
   // Manual record enrollment dispatch
   const handleAddManualLead = async (newLead: BusinessLead) => {
     if (!user) return;
+    const fullLead = {
+      ...newLead,
+      ownerId: user.uid
+    };
+
+    // Proactively update local UI state instantly
+    setLeads(prev => {
+      const updated = [fullLead, ...prev];
+      try {
+        localStorage.setItem(`fallback_leads_${user.uid}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Failed to save manual lead locally:", e);
+      }
+      return updated;
+    });
+
     const leadRef = doc(db, 'leads', newLead.id);
     try {
-      await setDoc(leadRef, {
-        ...newLead,
-        ownerId: user.uid
-      });
+      await setDoc(leadRef, fullLead);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `leads/${newLead.id}`);
+      console.warn("Failed to save manual lead inside remote Firestore, local state preserved:", err);
     }
   };
 
   // Updates parameters on selected B2B detail sheet (notes, outreach pitches...)
   const handleUpdateLead = async (updatedLead: BusinessLead) => {
     if (!user) return;
+    const fullLead = {
+      ...updatedLead,
+      ownerId: user.uid
+    };
+
+    // Proactively update local UI state instantly
+    setLeads(prev => {
+      const updated = prev.map(l => l.id === updatedLead.id ? fullLead : l);
+      try {
+        localStorage.setItem(`fallback_leads_${user.uid}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Failed to save updated lead locally:", e);
+      }
+      return updated;
+    });
+
+    if (selectedLead && selectedLead.id === updatedLead.id) {
+      setSelectedLead(fullLead);
+    }
+
     const leadRef = doc(db, 'leads', updatedLead.id);
     try {
-      await setDoc(leadRef, {
-        ...updatedLead,
-        ownerId: user.uid
-      });
-      
-      // Keep UI Drawer selected ref current
-      if (selectedLead && selectedLead.id === updatedLead.id) {
-        setSelectedLead(updatedLead);
-      }
+      await setDoc(leadRef, fullLead);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `leads/${updatedLead.id}`);
+      console.warn("Failed to commit lead update inside remote Firestore, local state preserved:", err);
     }
   };
 
@@ -250,11 +339,26 @@ function AppContent() {
       activityLog: [statusLogItem, ...leadToChange.activityLog]
     };
 
+    // Proactively update local UI state instantly
+    setLeads(prev => {
+      const updated = prev.map(l => l.id === leadId ? updatedLead : l);
+      try {
+        localStorage.setItem(`fallback_leads_${user.uid}`, JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Failed to save lead status change locally:", e);
+      }
+      return updated;
+    });
+
+    if (selectedLead && selectedLead.id === leadId) {
+      setSelectedLead(updatedLead);
+    }
+
     const leadRef = doc(db, 'leads', leadId);
     try {
       await setDoc(leadRef, updatedLead);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `leads/${leadId}`);
+      console.warn("Failed to set lead status status change in remote Firestore, local state preserved:", err);
     }
   };
 
