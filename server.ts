@@ -5,7 +5,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
-import { initializeApp as initAdminApp, getApps, getApp } from "firebase-admin/app";
+import { initializeApp as initAdminApp, getApps, getApp, cert } from "firebase-admin/app";
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 // Stripe import removed
 
@@ -21,10 +21,27 @@ try {
     const configRaw = fs.readFileSync(configPath, "utf8");
     const firebaseConfig = JSON.parse(configRaw);
     
-    // Initialize Admin SDK to run with service default credentials (bypassing rules)
-    const adminApp = getApps().length === 0
-      ? initAdminApp({ projectId: firebaseConfig.projectId })
-      : getApp();
+    // Initialize Admin SDK to run with service credentials (if defined for external hosting e.g. Render) or default credentials (bypassing rules)
+    let adminApp;
+    if (getApps().length === 0) {
+      if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        try {
+          const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+          adminApp = initAdminApp({
+            credential: cert(serviceAccount),
+            projectId: firebaseConfig.projectId
+          });
+          console.log("Firebase Admin initialized using FIREBASE_SERVICE_ACCOUNT environment key.");
+        } catch (parseErr) {
+          console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT. Falling back to default credentials:", parseErr);
+          adminApp = initAdminApp({ projectId: firebaseConfig.projectId });
+        }
+      } else {
+        adminApp = initAdminApp({ projectId: firebaseConfig.projectId });
+      }
+    } else {
+      adminApp = getApp();
+    }
 
     db = getAdminFirestore(adminApp, firebaseConfig.firestoreDatabaseId || undefined);
     console.log("Admin Firestore successfully initialized on Node server wrapper.");
