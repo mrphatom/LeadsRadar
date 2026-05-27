@@ -1,8 +1,8 @@
 {
-  apiKey: "AIzaSyCcuOl_-C9Lbi0fvTc6-vAaCxpoJD6VUIo",
-  authDomain: "leadsradar-97562.firebaseapp.com",
-  projectId: "leadsradar-97562",
-  storageBucket: "leadsradar-97562.firebasestorage.app",
-  messagingSenderId: "128681719246",
-  appId: "1:128681719246:web:faf370d9579061af87679f"
+  "apiKey": "AIzaSyCcuOl_-C9Lbi0fvTc6-vAaCxpoJD6VUIo",
+  "authDomain": "leadsradar-97562.firebaseapp.com",
+  "projectId": "leadsradar-97562",
+  "storageBucket": "leadsradar-97562.firebasestorage.app",
+  "messagingSenderId": "128681719246",
+  "appId": "1:128681719246:web:faf370d9579061af87679f"
 }
