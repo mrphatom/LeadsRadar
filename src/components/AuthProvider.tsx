@@ -7,6 +7,7 @@ import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInAnonymously,
   updateProfile
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, writeBatch } from 'firebase/firestore';
@@ -36,6 +37,7 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
+  signInAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   updateUserSubscription: (
     tier: 'free' | 'pro', 
@@ -262,6 +264,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signInAsGuest = async () => {
+    try {
+      try {
+        const userCredential = await signInAnonymously(auth);
+        const guestUser = userCredential.user;
+        await initializeNewUserProfileAndLeads(guestUser.uid, 'guest@leadsradar.local', 'Demo Guest', '');
+        return;
+      } catch (anonErr: any) {
+        // Fallback to shared demo account if anonymous auth is disabled in Firebase console
+        const demoEmail = "demo@leadsradar.local";
+        const demoPass = "LeadsRadar2026Demo";
+        try {
+          await signInWithEmailAndPassword(auth, demoEmail, demoPass);
+        } catch (emailErr: any) {
+          const cred = await createUserWithEmailAndPassword(auth, demoEmail, demoPass);
+          const demoUser = cred.user;
+          await updateProfile(demoUser, { displayName: "Demo Guest" });
+          await initializeNewUserProfileAndLeads(demoUser.uid, demoEmail, "Demo Guest", "");
+        }
+      }
+    } catch (error) {
+      console.error('Guest sign-in error:', error);
+      throw error;
+    }
+  };
+
   const logout = async () => {
     try {
       await signOut(auth);
@@ -400,6 +428,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signInWithGoogle, 
       signInWithEmail, 
       signUpWithEmail, 
+      signInAsGuest,
       logout,
       updateUserSubscription,
       gmailAccessToken,

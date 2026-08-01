@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { useAuth } from './AuthProvider';
-import { Sparkles, Mail, Lock, User, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Sparkles, Mail, Lock, User, AlertCircle, ArrowRight, ShieldCheck, Eye, EyeOff, Play } from 'lucide-react';
 // @ts-ignore
 import brandLogo from '../assets/images/logo_1779885424761.png';
 
 export const AuthView: React.FC = () => {
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsGuest } = useAuth();
   
   const [isRegister, setIsRegister] = useState<boolean>(false);
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [name, setName] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +54,19 @@ export const AuthView: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Failed to sign in with Google.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuestAuth = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await signInAsGuest();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to start demo workspace.');
     } finally {
       setLoading(false);
     }
@@ -144,14 +158,24 @@ export const AuthView: React.FC = () => {
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Lock className="h-3.5 w-3.5 text-zinc-500" /> Password
               </label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-600"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full text-xs p-2.5 pr-9 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 focus:outline-hidden"
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
             </div>
 
             <button
@@ -186,6 +210,17 @@ export const AuthView: React.FC = () => {
               />
             </svg>
             Continue with Google account
+          </button>
+
+          {/* Instant Demo Guest Button */}
+          <button
+            type="button"
+            onClick={handleGuestAuth}
+            disabled={loading}
+            className="w-full py-2 rounded-lg border border-orange-500/30 hover:border-orange-500/60 bg-orange-500/5 hover:bg-orange-500/10 text-xs font-semibold text-orange-400 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+          >
+            <Play className="h-3.5 w-3.5 fill-orange-400 text-orange-400" />
+            Explore Instant Demo Workspace (No signup required)
           </button>
 
           {isRegister && (

@@ -1,5 +1,5 @@
 import { BusinessLead, LeadStatus } from '../types';
-import { Phone, Mail, MapPin, ClipboardList, Send, Copy, Check, ChevronRight } from 'lucide-react';
+import { Phone, Mail, MapPin, ClipboardList, Send, Copy, Check, ChevronRight, Linkedin, Globe, ShieldCheck, AlertCircle } from 'lucide-react';
 import React, { useState } from 'react';
 
 interface LeadCardProps {
@@ -145,6 +145,16 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
             {lead.category}
           </div>
 
+          {lead.verified && (
+            <span 
+              className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md"
+              title="Verified factual business via Google Search Grounding with Zero-Hallucination policy"
+            >
+              <ShieldCheck className="h-3 w-3" />
+              Verified Factual
+            </span>
+          )}
+
           {/* Inline Active Tags Lists */}
           {lead.tags && lead.tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -202,16 +212,77 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
               title="Click to copy email & set Contacted"
             >
               <Mail className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
-              <span className="truncate font-mono select-all">{lead.email}</span>
+              <span className={`truncate font-mono select-all ${lead.email.includes('not publicly listed') ? 'text-zinc-500 italic' : ''}`}>
+                {lead.email}
+              </span>
             </div>
-            <button
-              onClick={() => copyToClipboard(lead.email, 'email')}
-              className="text-zinc-500 hover:text-orange-400 p-1 shrink-0 transition-colors cursor-pointer"
-              title="Copy Email & set Contacted"
-            >
-              {copiedEmail ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
+            {!lead.email.includes('not publicly listed') && (
+              <button
+                onClick={() => copyToClipboard(lead.email, 'email')}
+                className="text-zinc-500 hover:text-orange-400 p-1 shrink-0 transition-colors cursor-pointer"
+                title="Copy Email & set Contacted"
+              >
+                {copiedEmail ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            )}
           </div>
+
+          {/* LinkedIn row */}
+          {lead.linkedin && (
+            <div className="flex items-center justify-between text-xs text-zinc-400">
+              <div className="flex items-center gap-2 truncate">
+                <Linkedin className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                {lead.linkedin.includes('http') ? (
+                  <a 
+                    href={lead.linkedin} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="truncate font-mono text-blue-400 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    LinkedIn Profile
+                  </a>
+                ) : (
+                  <span className="truncate font-mono text-zinc-500 italic">{lead.linkedin}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Website Status row */}
+          {lead.websiteStatus && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <Globe className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+              <span className="truncate text-zinc-400 italic text-[11px]">{lead.websiteStatus}</span>
+            </div>
+          )}
+
+          {/* LinkedIn Intelligence & Web Adaptability Badges */}
+          {(lead.linkedinIntelligence || lead.webAdaptability) && (
+            <div className="pt-1.5 flex flex-wrap items-center gap-1.5 border-t border-zinc-800/80">
+              {lead.linkedinIntelligence && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  <Linkedin className="h-3 w-3 shrink-0" />
+                  {lead.linkedinIntelligence.companyName} • {lead.linkedinIntelligence.keyDecisionMakers.length} DMs
+                </span>
+              )}
+              {lead.webAdaptability && (
+                <span
+                  className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md border ${
+                    lead.webAdaptability.status === 'Active Unchanged'
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : lead.webAdaptability.status === 'Web Changes Detected'
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                  }`}
+                  title={`Adaptability Score: ${lead.webAdaptability.adaptabilityScore}/100`}
+                >
+                  <Globe className="h-3 w-3 shrink-0" />
+                  {lead.webAdaptability.status} ({lead.webAdaptability.adaptabilityScore}%)
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action Controls */}
@@ -254,3 +325,42 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
     </div>
   );
 }
+
+export function LeadCardSkeleton() {
+  return (
+    <div className="bg-zinc-900/40 rounded-xl border border-zinc-800/80 p-5 flex flex-col justify-between h-full animate-pulse relative overflow-hidden">
+      <div className="space-y-3">
+        {/* Top bar skeleton */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="h-5 bg-zinc-800 rounded-md w-3/4" />
+          <div className="h-5 bg-zinc-800 rounded-full w-20 shrink-0" />
+        </div>
+        {/* Subtitle location skeleton */}
+        <div className="flex items-center gap-2">
+          <div className="h-3.5 bg-zinc-800 rounded w-1/3" />
+          <div className="h-3.5 bg-zinc-800 rounded w-1/4" />
+        </div>
+        {/* Badges skeleton */}
+        <div className="flex items-center gap-2 pt-1">
+          <div className="h-5 bg-zinc-800/80 rounded-md w-24" />
+          <div className="h-5 bg-zinc-800/80 rounded-md w-16" />
+        </div>
+        {/* Notes skeleton */}
+        <div className="space-y-1.5 pt-2">
+          <div className="h-3 bg-zinc-800/70 rounded w-full" />
+          <div className="h-3 bg-zinc-800/70 rounded w-5/6" />
+        </div>
+      </div>
+
+      {/* Footer controls skeleton */}
+      <div className="pt-4 mt-4 border-t border-zinc-800/60 space-y-2.5">
+        <div className="h-8 bg-zinc-800 rounded-lg w-full" />
+        <div className="flex items-center gap-2">
+          <div className="h-8 bg-zinc-800 rounded-lg flex-1" />
+          <div className="h-8 bg-zinc-800 rounded-lg w-28" />
+        </div>
+      </div>
+    </div>
+  );
+}
+

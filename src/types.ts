@@ -10,6 +10,66 @@ export interface ActivityLogItem {
   title: string;
 }
 
+export interface SearchHistoryItem {
+  id: string;
+  country: string;
+  city: string;
+  category: string;
+  platforms: string[];
+  timestamp: string;
+  resultsCount: number;
+}
+
+export interface LinkedInEmployeeContact {
+  name: string;
+  role: string;
+  profileUrl?: string;
+  department?: string;
+  verifiedStatus: 'Verified Active' | 'Unlisted' | 'Estimated';
+}
+
+export interface LinkedInCompanyIntelligence {
+  companyName: string;
+  linkedinUrl?: string;
+  employeeCountRange?: string;
+  industry?: string;
+  verifiedSocialFootprint: boolean;
+  keyDecisionMakers: LinkedInEmployeeContact[];
+  lastAuditedAt: string;
+  summary: string;
+}
+
+export interface WebAdaptabilityCheck {
+  lastCheckedAt: string;
+  status: 'Active Unchanged' | 'Web Changes Detected' | 'Domain Recently Registered' | 'Offline / Unreachable';
+  httpStatus?: number;
+  detectedChanges?: string[];
+  adaptabilityScore: number;
+}
+
+export interface GuestUsageState {
+  isGuest: boolean;
+  searchesUsed: number;
+  maxSearches: number;
+  leadsSaved: number;
+  maxLeadsSaved: number;
+  auditLogs: {
+    id: string;
+    action: string;
+    timestamp: string;
+    ipHash: string;
+    status: 'ALLOWED' | 'RATE_LIMITED' | 'AUDITED';
+  }[];
+}
+
+export type AIPitchTone =
+  | 'warm_consultant'
+  | 'value_first_partner'
+  | 'direct_founder'
+  | 'local_neighbor'
+  | 'loom_video_script'
+  | 'audio_voiceover';
+
 export interface BusinessLead {
   id: string;
   name: string;
@@ -20,8 +80,21 @@ export interface BusinessLead {
   category: string;
   phone: string;
   email: string;
+  linkedin?: string;
+  socials?: {
+    facebook?: string;
+    instagram?: string;
+    twitter?: string;
+  };
+  websiteStatus?: string;
+  verified?: boolean;
+  verificationSummary?: string;
+  sourcePlatform?: string;
+  verificationScore?: number;
   status: LeadStatus;
   notes: string;
+  linkedinIntelligence?: LinkedInCompanyIntelligence;
+  webAdaptability?: WebAdaptabilityCheck;
   outreachScript?: {
     emailSubject: string;
     emailBody: string;
@@ -59,4 +132,7 @@ export interface SearchConfig {
   country: CountryType;
   city: string;
   category: string;
+  platforms?: string[];
 }
+
+

@@ -3,10 +3,12 @@ import {
   X, Phone, Mail, MapPin, Building2, Calendar, ClipboardList, 
   Sparkles, Loader2, Copy, Check, MessageSquare, History, PlusCircle,
   TrendingDown, RefreshCw, Send, CheckSquare, AlertCircle, Bot, Zap, Lock, BarChart2, UserCheck,
-  ExternalLink, Tag, ArrowRightLeft, Laptop, Languages
+  ExternalLink, Tag, ArrowRightLeft, Laptop, Languages, Linkedin, Globe, ShieldCheck, Share2
 } from 'lucide-react';
 import { BusinessLead, LeadStatus, ActivityLogItem } from '../types';
 import { useAuth } from './AuthProvider';
+import DeepWebAuditModal from './DeepWebAuditModal';
+
 
 interface LeadDetailsModalProps {
   lead: BusinessLead;
@@ -91,7 +93,8 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
   const [copiedStatus, setCopiedStatus] = useState<string | null>(null);
 
   // Advanced SaaS States
-  const [selectedVariant, setSelectedVariant] = useState<'direct' | 'value-first' | 'question-based'>('direct');
+  const [selectedVariant, setSelectedVariant] = useState<string>('direct');
+  const [showDeepAuditModal, setShowDeepAuditModal] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<'English' | 'German' | 'French' | 'Spanish' | 'Italian'>('English');
   const [emailSubjectText, setEmailSubjectText] = useState('');
   const [emailBodyText, setEmailBodyText] = useState('');
@@ -148,7 +151,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
   }, []);
 
   // Generate customized B2B proposal
-  const handleGeneratePitch = async (variantOverride?: 'direct' | 'value-first' | 'question-based', langOverride?: 'English' | 'German' | 'French' | 'Spanish' | 'Italian') => {
+  const handleGeneratePitch = async (variantOverride?: string, langOverride?: 'English' | 'German' | 'French' | 'Spanish' | 'Italian') => {
     const activeVar = variantOverride || selectedVariant;
     const activeLang = langOverride || selectedLanguage;
     
@@ -564,34 +567,117 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         </div>
 
         {/* Info Strip */}
-        <div className="bg-zinc-950/50 border-b border-zinc-800 px-6 py-4 grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0 text-sm">
-          <div className="flex items-center gap-2 text-zinc-350">
-            <Building2 className="h-4.5 w-4.5 text-orange-500 shrink-0" />
-            <span className="font-semibold text-white truncate">{lead.category}</span>
+        <div className="bg-zinc-950/50 border-b border-zinc-800 px-6 py-4 space-y-3 shrink-0 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex items-center gap-2 text-zinc-350">
+              <Building2 className="h-4.5 w-4.5 text-orange-500 shrink-0" />
+              <span className="font-semibold text-white truncate">{lead.category}</span>
+              {lead.verified && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Verified Factual
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowDeepAuditModal(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 px-2.5 py-0.5 rounded-md transition-colors cursor-pointer"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span>Factual Web & LinkedIn Audit →</span>
+              </button>
+            </div>
+            <div 
+              onClick={() => {
+                if (!lead.phone.includes('No public phone')) {
+                  navigator.clipboard.writeText(lead.phone);
+                  triggerCopyNotice("Phone number copied to clipboard!");
+                  handleContactAction();
+                }
+              }}
+              className={`flex items-center gap-2 transition-colors ${
+                lead.phone.includes('No public phone')
+                  ? 'text-zinc-500 italic cursor-default'
+                  : 'text-zinc-350 hover:text-orange-400 cursor-pointer group/item'
+              }`}
+              title="Click to copy & set Contacted status"
+            >
+              <Phone className="h-4.5 w-4.5 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
+              <span className="font-mono truncate select-all group-hover/item:underline">{lead.phone}</span>
+            </div>
+            <div 
+              onClick={() => {
+                if (!lead.email.includes('not publicly listed')) {
+                  navigator.clipboard.writeText(lead.email);
+                  triggerCopyNotice("Email address copied to clipboard!");
+                  handleContactAction();
+                }
+              }}
+              className={`flex items-center gap-2 transition-colors ${
+                lead.email.includes('not publicly listed')
+                  ? 'text-zinc-500 italic cursor-default'
+                  : 'text-zinc-350 hover:text-orange-400 cursor-pointer group/item'
+              }`}
+              title="Click to copy & set Contacted status"
+            >
+              <Mail className="h-4.5 w-4.5 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
+              <span className="font-mono truncate select-all group-hover/item:underline">{lead.email}</span>
+            </div>
           </div>
-          <div 
-            onClick={() => {
-              navigator.clipboard.writeText(lead.phone);
-              triggerCopyNotice("Phone number copied to clipboard!");
-              handleContactAction();
-            }}
-            className="flex items-center gap-2 text-zinc-350 hover:text-orange-400 transition-colors cursor-pointer group/item"
-            title="Click to copy & set Contacted status"
-          >
-            <Phone className="h-4.5 w-4.5 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
-            <span className="font-mono truncate select-all group-hover/item:underline">{lead.phone}</span>
-          </div>
-          <div 
-            onClick={() => {
-              navigator.clipboard.writeText(lead.email);
-              triggerCopyNotice("Email address copied to clipboard!");
-              handleContactAction();
-            }}
-            className="flex items-center gap-2 text-zinc-350 hover:text-orange-400 transition-colors cursor-pointer group/item"
-            title="Click to copy & set Contacted status"
-          >
-            <Mail className="h-4.5 w-4.5 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
-            <span className="font-mono truncate select-all group-hover/item:underline">{lead.email}</span>
+
+          {/* Socials & Zero Hallucination Web Status Strip */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-zinc-800/60 text-xs">
+            <div className="flex items-center gap-2 text-zinc-400 truncate">
+              <Linkedin className="h-4 w-4 text-blue-400 shrink-0" />
+              {lead.linkedin && lead.linkedin.includes('http') ? (
+                <a 
+                  href={lead.linkedin}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-blue-400 hover:underline truncate"
+                >
+                  {lead.linkedin}
+                </a>
+              ) : (
+                <span className="font-mono text-zinc-500 italic truncate">
+                  {lead.linkedin || "LinkedIn profile not publicly listed"}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 text-zinc-400 truncate">
+              <Share2 className="h-4 w-4 text-purple-400 shrink-0" />
+              {lead.socials?.facebook && lead.socials.facebook.includes('http') ? (
+                <a 
+                  href={lead.socials.facebook}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-purple-400 hover:underline truncate"
+                >
+                  Facebook Page
+                </a>
+              ) : lead.socials?.instagram && lead.socials.instagram.includes('http') ? (
+                <a 
+                  href={lead.socials.instagram}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-pink-400 hover:underline truncate"
+                >
+                  Instagram Page
+                </a>
+              ) : (
+                <span className="font-mono text-zinc-500 italic truncate">
+                  Socials not publicly listed
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 text-zinc-400 truncate">
+              <Globe className="h-4 w-4 text-orange-500 shrink-0" />
+              <span className="truncate italic text-zinc-400">
+                {lead.websiteStatus || "No official website - Google Maps / directory only"}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -725,54 +811,37 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Variant Testing Selector */}
                         <div>
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide block mb-1.5">Outreach Tone Selection</label>
-                          <div className="grid grid-cols-3 gap-1 bg-zinc-900 p-1 rounded-lg border border-zinc-800">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedVariant('direct');
-                                handleGeneratePitch('direct');
-                              }}
-                              className={`text-[10px] py-1.5 rounded-md font-bold transition-all text-center cursor-pointer ${
-                                selectedVariant === 'direct' ? 'bg-orange-500 text-zinc-950' : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              Direct
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!isPro) {
-                                  onUpgradeClick();
-                                } else {
-                                  setSelectedVariant('value-first');
-                                  handleGeneratePitch('value-first');
-                                }
-                              }}
-                              className={`text-[10px] py-1.5 rounded-md font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
-                                selectedVariant === 'value-first' ? 'bg-orange-500 text-zinc-950' : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              {!isPro && <Lock className="h-2.5 w-2.5" />}
-                              Value-First
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!isPro) {
-                                  onUpgradeClick();
-                                } else {
-                                  setSelectedVariant('question-based');
-                                  handleGeneratePitch('question-based');
-                                }
-                              }}
-                              className={`text-[10px] py-1.5 rounded-md font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
-                                selectedVariant === 'question-based' ? 'bg-orange-500 text-zinc-950' : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              {!isPro && <Lock className="h-2.5 w-2.5" />}
-                              Diagnostic
-                            </button>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide block mb-1.5">Human-Centric Outreach Library (8 Tones)</label>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-zinc-900 p-1.5 rounded-xl border border-zinc-800">
+                            {[
+                              { id: 'direct', label: '🎯 Direct Offer' },
+                              { id: 'value-first', label: '💡 Value-First' },
+                              { id: 'question-based', label: '❓ Diagnostic' },
+                              { id: 'warm_consultant', label: '🤝 Warm Consultant' },
+                              { id: 'direct_founder', label: '🚀 Founder-to-Founder' },
+                              { id: 'local_neighbor', label: '🏡 Local Neighbor' },
+                              { id: 'loom_video_script', label: '🎥 Loom Script' },
+                              { id: 'audio_voiceover', label: '🎙️ Audio Voiceover' }
+                            ].map((tone) => (
+                              <button
+                                key={tone.id}
+                                type="button"
+                                onClick={() => {
+                                  if (tone.id !== 'direct' && !isPro) {
+                                    onUpgradeClick();
+                                  } else {
+                                    setSelectedVariant(tone.id);
+                                    handleGeneratePitch(tone.id);
+                                  }
+                                }}
+                                className={`text-[10px] py-1.5 px-2 rounded-lg font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
+                                  selectedVariant === tone.id ? 'bg-orange-500 text-zinc-950 shadow-xs' : 'text-zinc-400 hover:text-white bg-zinc-950/50 hover:bg-zinc-800'
+                                }`}
+                              >
+                                {tone.id !== 'direct' && !isPro && <Lock className="h-2.5 w-2.5 shrink-0" />}
+                                <span>{tone.label}</span>
+                              </button>
+                            ))}
                           </div>
                         </div>
 
@@ -1807,6 +1876,15 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         </div>
 
       </div>
+
+      {/* Deep Web Audit Modal (Zero Hallucination / LinkedIn Intelligence) */}
+      <DeepWebAuditModal
+        isOpen={showDeepAuditModal}
+        onClose={() => setShowDeepAuditModal(false)}
+        lead={lead}
+        onUpdateLead={onUpdateLead}
+      />
     </div>
   );
 }
+

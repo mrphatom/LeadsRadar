@@ -3,12 +3,14 @@ import {
   Building2, Globe, Search, PlusCircle, Download, RefreshCw, 
   Grid, List, SlidersHorizontal, Trash2, CheckSquare, Sparkles, 
   Share2, ArrowRightLeft, Database, HelpCircle, CheckCircle2, ChevronRight,
-  LogOut, UserCheck, Menu, X
+  LogOut, UserCheck, Menu, X, BarChart2, ShieldCheck, Zap, ExternalLink, Lock
 } from 'lucide-react';
 import { BusinessLead, CountryType, LeadStatus } from './types';
 import SearchScanner from './components/SearchScanner';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
-import LeadCard from './components/LeadCard';
+import LeadCard, { LeadCardSkeleton } from './components/LeadCard';
+import SecurityAuditModal from './components/SecurityAuditModal';
+import { checkGuestSearchLimit, checkGuestSaveLimit } from './services/guestAuditService';
 import LeadDetailsModal from './components/LeadDetailsModal';
 import AddLeadModal from './components/AddLeadModal';
 import { AuthProvider, useAuth } from './components/AuthProvider';
@@ -43,6 +45,7 @@ function AppContent() {
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [paystackSuccessNotice, setPaystackSuccessNotice] = useState<string | null>(null);
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
   useEffect(() => {
     document.title = "LeadsRadar | AI-Driven Outreach Lead Generator";
@@ -188,7 +191,8 @@ function AppContent() {
     country: string, 
     category: string, 
     discoveredCount: number, 
-    source: string
+    source: string,
+    platforms?: string[]
   ) => {
     if (!user) return;
     const queryId = `query_${Date.now()}`;
@@ -200,6 +204,7 @@ function AppContent() {
       category,
       discoveredCount,
       source,
+      platforms: platforms || ['Google Maps', 'Yelp', 'LinkedIn', 'Trustpilot'],
       timestamp: new Date().toISOString()
     };
 
@@ -225,6 +230,12 @@ function AppContent() {
   // Add new crawl discoveries directly to user Firestore db
   const handleLeadsDiscovered = async (newLeads: BusinessLead[], source: string) => {
     if (!user) return;
+    const searchCheck = checkGuestSearchLimit();
+    if (!searchCheck.allowed) {
+      alert("Guest Mode Discovery Limit Reached (5/5 searches). Open 'Security & Guest' in the navigation bar to switch to Pro Authenticated Mode for unlimited access!");
+      setIsSecurityModalOpen(true);
+      return;
+    }
 
     const formattedDiscoveries = newLeads.map((newL, index) => {
       const leadId = newL.id || `lead_crawl_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 5)}`;
@@ -283,6 +294,12 @@ function AppContent() {
   // Manual record enrollment dispatch
   const handleAddManualLead = async (newLead: BusinessLead) => {
     if (!user) return;
+    const saveCheck = checkGuestSaveLimit();
+    if (!saveCheck.allowed) {
+      alert("Guest Mode Save Limit Reached (15/15 leads saved). Open 'Security & Guest' in the navigation bar to switch to Pro Authenticated Mode for unlimited capacity!");
+      setIsSecurityModalOpen(true);
+      return;
+    }
     const fullLead = {
       ...newLead,
       ownerId: user.uid
@@ -613,150 +630,153 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-300 transition-all selection:bg-orange-500/10 selection:text-orange-400 leading-normal font-sans">
       
-      {/* Upper Navigation Title/Control Strip */}
-      <header className="bg-zinc-950 border-b border-zinc-900 sticky top-0 z-40 px-4 md:px-6 py-3.5">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          
-          {/* Header Top Row (Brand identity, plus mobile burger menu on mobile) */}
-          <div className="flex items-center justify-between w-full md:w-auto">
-            {/* Branded Identity */}
-            <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden flex items-center justify-center shadow-md shadow-orange-500/5 shrink-0">
-                <img 
-                  src={brandLogo} 
-                  alt="LeadsRadar" 
-                  className="h-full w-full object-cover" 
-                  referrerPolicy="no-referrer"
-                />
+      {/* Sleek Minimalist Sticky Navbar */}
+      <header className="bg-zinc-950/80 backdrop-blur-md border-b border-zinc-900 sticky top-0 z-50 transition-all">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="h-14 flex items-center justify-between gap-6">
+            
+            {/* Minimal Brand */}
+            <div className="flex items-center gap-2 shrink-0" title="Home">
+              <div className="h-8 w-8 bg-zinc-900 border border-zinc-800/80 rounded-xl flex items-center justify-center text-orange-400 shadow-sm hover:border-zinc-700 transition-colors">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-5 w-5">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.75" strokeDasharray="4 2" className="opacity-40" />
+                  <circle cx="12" cy="12" r="5" stroke="currentColor" strokeWidth="2" />
+                  <circle cx="12" cy="12" r="2" fill="currentColor" />
+                  <path d="M12 3V6M12 18V21M3 12H6M18 12H21" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                </svg>
               </div>
-              <div>
-                <span className="text-lg md:text-xl font-extrabold text-white tracking-tight block">
-                  LeadsRadar <span className="font-medium text-orange-500 font-mono text-xs md:text-sm ml-1">v3.0</span>
+              {isPro && (
+                <span className="bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded">
+                  PRO
                 </span>
-                <span className="text-[10px] md:text-xs text-zinc-500 font-medium block">
-                  B2B Outreach Engine • Personalized Cloud Workspace
-                </span>
-              </div>
+              )}
             </div>
 
-            {/* Mobile Actions Overlay: Pro Badge & Burger */}
-            <div className="flex items-center gap-2 md:hidden">
-              {isPro && (
-                <div className="bg-orange-500/15 border border-orange-500/20 px-2 py-0.5 rounded text-[8px] font-extrabold text-orange-400 tracking-wider">
-                  👑 PRO
-                </div>
+            {/* Clean Segmented Navigation (Center) */}
+            <div className="hidden sm:flex items-center gap-1 bg-zinc-900/60 p-1 rounded-full border border-zinc-800/60">
+              <button
+                onClick={() => setViewTab('leads')}
+                className={`px-4 py-1 text-xs font-medium rounded-full transition-all cursor-pointer flex items-center gap-1.5 ${
+                  viewTab === 'leads'
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Grid className="h-3.5 w-3.5" />
+                Leads
+              </button>
+              <button
+                onClick={() => setViewTab('analytics')}
+                className={`px-4 py-1 text-xs font-medium rounded-full transition-all cursor-pointer flex items-center gap-1.5 ${
+                  viewTab === 'analytics'
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <BarChart2 className="h-3.5 w-3.5" />
+                Analytics
+              </button>
+            </div>
+
+            {/* Minimalist Right Controls */}
+            <div className="flex items-center gap-2.5 shrink-0">
+              {/* Security Audit & Guest Mode Governance Button */}
+              <button
+                onClick={() => setIsSecurityModalOpen(true)}
+                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Security Audit & Guest Mode Governance"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-orange-400" />
+                <span className="hidden lg:inline">Security & Guest</span>
+              </button>
+
+              {/* New Prospect Button */}
+              <button
+                onClick={() => setIsAddingLead(true)}
+                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <PlusCircle className="h-3.5 w-3.5 text-orange-400" />
+                <span className="hidden md:inline">New Prospect</span>
+                <span className="md:hidden">New</span>
+              </button>
+
+              {/* Upgrade Pro Trigger (if free) */}
+              {!isPro && (
+                <button
+                  type="button"
+                  onClick={() => setIsSubscriptionModalOpen(true)}
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:opacity-95 text-zinc-950 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer uppercase tracking-wide"
+                  title="Upgrade limits & AI enrichment"
+                >
+                  <Sparkles className="h-3 w-3 fill-current" />
+                  <span>Pro</span>
+                </button>
               )}
+
+              {/* Clean Minimalist User Avatar & Logout */}
+              <div className="flex items-center gap-1.5 pl-1.5 border-l border-zinc-800/80">
+                <div 
+                  className="h-7 w-7 rounded-full bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-zinc-300 text-xs font-semibold select-none cursor-default"
+                  title={user.email || 'Member'}
+                >
+                  {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+                </div>
+                <button
+                  onClick={logout}
+                  className="text-zinc-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-zinc-900 transition-colors cursor-pointer"
+                  title="Sign out"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Mobile Burger Menu Toggle */}
               <button
                 type="button"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white p-2 rounded-xl cursor-pointer"
-                aria-label="Toggle navigation menu"
+                className="sm:hidden text-zinc-400 hover:text-white p-1.5 rounded-lg transition-colors"
+                aria-label="Toggle mobile menu"
               >
                 {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
             </div>
           </div>
 
-          {/* Desktop-only Panel OR Mobile expanded View */}
-          <div className={`${isMobileMenuOpen ? 'flex' : 'hidden md:flex'} flex-col md:flex-row items-stretch md:items-center gap-3.5 md:gap-4 w-full md:w-auto mt-2 md:mt-0 animate-fadeIn md:animate-none`}>
-            
-            {/* Divider line for mobile */}
-            <div className="h-px bg-zinc-900 md:hidden my-1" />
-
-            {/* Tab Switches (Leads vs Analytics Dashboard) */}
-            <div className="flex bg-zinc-900 border border-zinc-800 p-1 rounded-xl w-full md:w-auto">
-              <button
-                onClick={() => {
-                  setViewTab('leads');
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`flex-1 md:flex-none px-4 py-2 md:py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer text-center ${
-                  viewTab === 'leads'
-                    ? 'bg-orange-500 text-zinc-950 font-extrabold shadow-sm'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Lead Manager
-              </button>
-              <button
-                onClick={() => {
-                  setViewTab('analytics');
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`flex-1 md:flex-none px-4 py-2 md:py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer text-center ${
-                  viewTab === 'analytics'
-                    ? 'bg-orange-500 text-zinc-950 font-extrabold shadow-sm'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                KPI Analytics
-              </button>
-            </div>
-
-            {/* Quick manual enroll triggers */}
-            <button
-              onClick={() => {
-                setIsAddingLead(true);
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full md:w-auto bg-zinc-100 text-zinc-950 hover:bg-white px-4 py-2 md:py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0"
-            >
-              <PlusCircle className="h-3.5 w-3.5" />
-              Manual Enroll
-            </button>
-
-            {/* User Identity Display & Sign Out */}
-            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3.5 md:gap-2.5 bg-zinc-900 border border-zinc-800 p-3 md:py-1 md:pl-3.5 md:pr-1.5 rounded-2xl md:rounded-xl shrink-0 select-none">
-              
-              {/* Pro Upgrade Trigger */}
-              {!isPro ? (
+          {/* Minimal Mobile Navigation Drawer */}
+          {isMobileMenuOpen && (
+            <div className="sm:hidden border-t border-zinc-800/80 py-3 space-y-2 animate-fadeIn">
+              <div className="flex bg-zinc-900/60 p-1 rounded-full border border-zinc-800/60">
                 <button
-                  type="button"
                   onClick={() => {
-                    setIsSubscriptionModalOpen(true);
+                    setViewTab('leads');
                     setIsMobileMenuOpen(false);
                   }}
-                  className="w-full md:w-auto bg-orange-500 hover:bg-orange-600 text-zinc-950 px-4 py-2 md:py-1.5 rounded-md md:rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-md shadow-orange-500/11 cursor-pointer uppercase tracking-wider animate-pulse hover:animate-none hover:scale-102 transition-all shrink-0"
-                  title="Unlock advanced analysis tools"
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-full transition-all flex items-center justify-center gap-1.5 ${
+                    viewTab === 'leads'
+                      ? 'bg-zinc-800 text-white shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
                 >
-                  <Sparkles className="h-3.5 w-3.5 text-zinc-955 fill-current" />
-                  Upgrade limits
+                  <Grid className="h-3.5 w-3.5" />
+                  Leads
                 </button>
-              ) : (
-                <div className="hidden md:flex bg-orange-500/10 border border-orange-500/20 px-2.5 py-1 rounded-lg text-[10px] font-extrabold text-orange-400 tracking-wider items-center gap-1 shrink-0 uppercase font-mono">
-                  👑 Pro Active
-                </div>
-              )}
-
-              <div className="flex items-center md:items-end justify-between md:justify-start md:flex-col pl-1 border-t md:border-t-0 border-zinc-850 pt-2.5 md:pt-0 md:pl-1 md:border-l border-zinc-805">
-                <div className="flex flex-col items-start md:items-end">
-                  <span className="text-xs font-bold text-white leading-tight flex items-center gap-1">
-                    <UserCheck className="h-3 w-3 text-orange-500 shrink-0" />
-                    {user.displayName || 'CRM Member'}
-                  </span>
-                  <span className="text-[9px] text-zinc-500 font-mono leading-none">{user.email}</span>
-                </div>
-                {!isPro && (
-                  <span className="text-[8px] font-mono text-zinc-500 tracking-wide md:hidden">Free Plan Caps</span>
-                )}
-                {isPro && (
-                  <span className="text-[8px] font-extrabold text-orange-400 tracking-wider md:hidden uppercase font-mono">👑 PRO ACTIVE</span>
-                )}
+                <button
+                  onClick={() => {
+                    setViewTab('analytics');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-full transition-all flex items-center justify-center gap-1.5 ${
+                    viewTab === 'analytics'
+                      ? 'bg-zinc-800 text-white shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <BarChart2 className="h-3.5 w-3.5" />
+                  Analytics
+                </button>
               </div>
-
-              {/* Sign out button */}
-              <button
-                onClick={logout}
-                className="w-full md:w-auto bg-zinc-955 md:bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-red-400 py-2 md:p-2 rounded-xl md:rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1 md:block"
-                title="Exit Work Session"
-              >
-                <LogOut className="h-3.5 w-3.5 animate-pulse" />
-                <span className="text-xs font-semibold md:hidden">Logout Workspace</span>
-              </button>
             </div>
-
-          </div>
-
+          )}
         </div>
       </header>
 
@@ -963,7 +983,13 @@ function AppContent() {
             )}
 
             {/* RESULTS BLOCKS GRID */}
-            {filteredLeads.length === 0 ? (
+            {syncing && filteredLeads.length === 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fadeIn">
+                {[...Array(6)].map((_, index) => (
+                  <LeadCardSkeleton key={index} />
+                ))}
+              </div>
+            ) : filteredLeads.length === 0 ? (
               <div className="bg-zinc-900/50 border rounded-3xl border-zinc-800 p-12 text-center animate-fadeIn">
                 <div className="p-3 bg-zinc-950 text-zinc-500 rounded-full w-fit mx-auto mb-3.5 border border-zinc-800">
                   <SlidersHorizontal className="h-6 w-6" />
@@ -1017,12 +1043,122 @@ function AppContent() {
         />
       )}
 
-      {/* Sticky Bottom Credit Line */}
-      <footer className="mt-16 border-t border-zinc-900 bg-zinc-950 py-6 text-center text-[11px] text-zinc-500">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3.5 font-medium">
-          <span>
-            LeadsRadar • Full-Stack AI Lead Gen Interface.
-          </span>
+      {/* Security & Guest Mode Governance Modal */}
+      <SecurityAuditModal
+        isOpen={isSecurityModalOpen}
+        onClose={() => setIsSecurityModalOpen(false)}
+      />
+
+      {/* Modern Responsive SaaS Footer */}
+      <footer className="mt-20 border-t border-zinc-800/80 bg-zinc-950/90 text-zinc-400">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-12">
+          {/* Top Footer Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pb-10 border-b border-zinc-800/80">
+            {/* Brand Column */}
+            <div className="md:col-span-5 space-y-3.5">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 bg-zinc-900 border border-zinc-800/80 rounded-xl flex items-center justify-center text-orange-400 shadow-sm">
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-5 w-5">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.75" strokeDasharray="4 2" className="opacity-40" />
+                    <circle cx="12" cy="12" r="5" stroke="currentColor" strokeWidth="2" />
+                    <circle cx="12" cy="12" r="2" fill="currentColor" />
+                    <path d="M12 3V6M12 18V21M3 12H6M18 12H21" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                  </svg>
+                </div>
+                <span className="bg-orange-500/10 border border-orange-500/25 text-orange-400 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded">
+                  v3.0
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 leading-relaxed max-w-sm">
+                AI-driven local business intelligence & automated zero-hallucination B2B outreach engine. Designed to discover real brick-and-mortar prospects needing a modern web presence.
+              </p>
+              <div className="inline-flex items-center gap-2 bg-zinc-900/80 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-zinc-300 font-medium text-[11px]">System Status: All Services Operational</span>
+              </div>
+            </div>
+
+            {/* Quick Views */}
+            <div className="md:col-span-3 space-y-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-white font-mono">Workspace Views</h4>
+              <ul className="space-y-2 text-xs">
+                <li>
+                  <button 
+                    onClick={() => { setViewTab('leads'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    className="hover:text-orange-400 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Grid className="h-3.5 w-3.5 text-zinc-500" />
+                    Lead Manager CRM
+                  </button>
+                </li>
+                <li>
+                  <button 
+                    onClick={() => { setViewTab('analytics'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    className="hover:text-orange-400 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <BarChart2 className="h-3.5 w-3.5 text-zinc-500" />
+                    KPI Analytics & Reporting
+                  </button>
+                </li>
+                <li>
+                  <button 
+                    onClick={() => setIsAddingLead(true)}
+                    className="hover:text-orange-400 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5 text-zinc-500" />
+                    Manual Prospect Enroll
+                  </button>
+                </li>
+                {!isPro && (
+                  <li>
+                    <button 
+                      onClick={() => setIsSubscriptionModalOpen(true)}
+                      className="text-orange-400 hover:underline font-semibold cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Upgrade to Pro Workspace
+                    </button>
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            {/* Security & Verification Badges */}
+            <div className="md:col-span-4 space-y-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-white font-mono">Security & Intelligence</h4>
+              <div className="space-y-2">
+                <div className="flex items-start gap-2.5 bg-zinc-900/60 border border-zinc-800/80 p-2.5 rounded-xl text-xs">
+                  <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold text-white">Zero-Hallucination Search Grounding</div>
+                    <div className="text-[11px] text-zinc-400">Verified real-time public telephone numbers & directories only.</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5 bg-zinc-900/60 border border-zinc-800/80 p-2.5 rounded-xl text-xs">
+                  <Lock className="h-4 w-4 text-orange-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold text-white">256-bit Cloud Workspace Encryption</div>
+                    <div className="text-[11px] text-zinc-400">Personalized Firestore data isolation & Paystack verified checkout.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Footer Bar */}
+          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
+            <div>
+              © {new Date().getFullYear()} All rights reserved.
+            </div>
+            <div className="flex items-center gap-6">
+              <span className="hover:text-zinc-300 transition-colors cursor-pointer">Privacy Policy</span>
+              <span className="hover:text-zinc-300 transition-colors cursor-pointer">Terms of Service</span>
+              <span className="hover:text-zinc-300 transition-colors cursor-pointer">API Documentation</span>
+            </div>
+          </div>
         </div>
       </footer>
 

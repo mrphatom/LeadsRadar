@@ -45,6 +45,10 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
       const successUrl = `${window.location.protocol}//${window.location.host}/billing-success`;
       const cancelUrl = `${window.location.protocol}//${window.location.host}/`;
 
+      const cleanEmail = (user?.email && !user.email.endsWith('.local') && user.email.includes('@')) 
+        ? user.email 
+        : "billing@leadsradar.com";
+
       const response = await fetch('/api/paystack/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -53,7 +57,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
           period: selectedPeriod,
           successUrl,
           cancelUrl,
-          email: user?.email || "billing@leadsradar.local"
+          email: cleanEmail
         })
       });
 

@@ -6,14 +6,24 @@ import {
 } from 'lucide-react';
 import { CountryType, BusinessLead } from '../types';
 import { useAuth } from './AuthProvider';
+import SearchHistoryModal from './SearchHistoryModal';
 
 interface SearchScannerProps {
   onLeadsDiscovered: (newLeads: BusinessLead[], source: string, citations?: any[]) => void;
   isDemoMode: boolean;
-  onSaveQuery: (city: string, country: string, category: string, discoveredCount: number, source: string) => void;
+  onSaveQuery: (city: string, country: string, category: string, discoveredCount: number, source: string, platforms?: string[]) => void;
   pastQueries: any[];
   onUpgradeClick: () => void;
 }
+
+const AVAILABLE_PLATFORMS = [
+  { id: 'Google Maps', label: 'Google Maps', icon: '📍' },
+  { id: 'Yelp', label: 'Yelp', icon: '⭐' },
+  { id: 'LinkedIn', label: 'LinkedIn', icon: '💼' },
+  { id: 'Trustpilot', label: 'Trustpilot', icon: '🛡️' },
+  { id: 'Facebook Business', label: 'Facebook Business', icon: '📘' },
+  { id: 'YellowPages', label: 'YellowPages', icon: '📒' }
+];
 
 const COMMON_NICHES = [
   'Bakery',
@@ -79,6 +89,73 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [syncProgress, setSyncProgress] = useState<number>(0);
   const [isSyncingAll, setIsSyncingAll] = useState<boolean>(false);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['Google Maps', 'Yelp', 'LinkedIn', 'Trustpilot']);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+
+  const togglePlatform = (pId: string) => {
+    if (selectedPlatforms.includes(pId)) {
+      if (selectedPlatforms.length > 1) {
+        setSelectedPlatforms(selectedPlatforms.filter(p => p !== pId));
+      }
+    } else {
+      setSelectedPlatforms([...selectedPlatforms, pId]);
+    }
+  };
+
+  const handleRerunQuery = async (queryItem: any) => {
+    const targetCountry = queryItem.country || 'USA';
+    const targetCity = queryItem.city || 'Austin';
+    const targetCategory = queryItem.category || 'Bakery';
+    const targetPlatforms = queryItem.platforms || ['Google Maps', 'Yelp', 'LinkedIn', 'Trustpilot'];
+
+    setCountry(targetCountry);
+    setCity(targetCity);
+    if (COMMON_NICHES.includes(targetCategory)) {
+      setCategory(targetCategory);
+    } else {
+      setCategory('Custom');
+      setCustomCategory(targetCategory);
+    }
+    setSelectedPlatforms(targetPlatforms);
+
+    setLoading(true);
+    setError(null);
+    setSuccessCount(null);
+    setScanSource(null);
+
+    try {
+      const response = await fetch('/api/search-leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          country: targetCountry,
+          city: targetCity,
+          category: targetCategory,
+          platforms: targetPlatforms
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Search agent failed to retrieve listings.');
+      }
+
+      const data = await response.json();
+      if (data.leads && Array.isArray(data.leads)) {
+        if (data.leads.length === 0) {
+          setError(`No offline businesses matching "${targetCategory}" were found in ${targetCity}.`);
+        } else {
+          onLeadsDiscovered(data.leads, data.source, data.citations);
+          setSuccessCount(data.leads.length);
+          setScanSource(data.source || null);
+          onSaveQuery(targetCity, targetCountry, targetCategory, data.leads.length, data.source || 'google-search-grounding', targetPlatforms);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while re-running discovery crawl.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCitySelect = (selectedCity: string) => {
     setCity(selectedCity);
@@ -144,7 +221,8 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
         body: JSON.stringify({
           country,
           city,
-          category: searchCategoryQuery
+          category: searchCategoryQuery,
+          platforms: selectedPlatforms
         })
       });
 
@@ -167,7 +245,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
           onLeadsDiscovered(markedLeads, data.source, data.citations);
           setSuccessCount(data.leads.length);
           setScanSource(data.source || null);
-          onSaveQuery(city, country, finalCategory, data.leads.length, data.source || 'google-search-grounding');
+          onSaveQuery(city, country, finalCategory, data.leads.length, data.source || 'google-search-grounding', selectedPlatforms);
         }
       } else {
         throw new Error('Invalid response structure received from server.');
@@ -492,6 +570,50 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
             </button>
           </div>
 
+          {/* Enterprise Multi-Platform Directory Selection */}
+          <div className="bg-zinc-950/45 p-3.5 rounded-2xl border border-zinc-900 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-zinc-400 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                <Globe className="h-3 w-3 text-orange-400" />
+                Target Discovery Registries ({selectedPlatforms.length} active)
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedPlatforms.length === AVAILABLE_PLATFORMS.length) {
+                    setSelectedPlatforms(['Google Maps']);
+                  } else {
+                    setSelectedPlatforms(AVAILABLE_PLATFORMS.map(p => p.id));
+                  }
+                }}
+                className="text-[10px] text-orange-400 hover:text-orange-300 font-medium cursor-pointer"
+              >
+                {selectedPlatforms.length === AVAILABLE_PLATFORMS.length ? 'Reset to Google Maps Only' : 'Select All Sources'}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {AVAILABLE_PLATFORMS.map((plat) => {
+                const isSelected = selectedPlatforms.includes(plat.id);
+                return (
+                  <button
+                    key={plat.id}
+                    type="button"
+                    onClick={() => togglePlatform(plat.id)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
+                      isSelected
+                        ? 'bg-orange-500/15 border-orange-500/40 text-white shadow-xs'
+                        : 'bg-zinc-900/60 border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    <span>{plat.icon}</span>
+                    <span>{plat.label}</span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-orange-400' : 'bg-zinc-700'}`} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Scan Button & Visual Progress Logs */}
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="w-full sm:flex-1">
@@ -555,32 +677,38 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
           {/* Personalized Search History logs */}
           {pastQueries && pastQueries.length > 0 && (
             <div className="pt-4 border-t border-zinc-900 mt-4">
-              <div className="flex items-center gap-1.5 mb-2">
-                <History className="h-3.5 w-3.5 text-zinc-500" />
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Personalized Scan History ({pastQueries.length})</span>
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-1.5">
+                  <History className="h-3.5 w-3.5 text-orange-400" />
+                  <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">
+                    Personalized Scan History ({pastQueries.length})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryModalOpen(true)}
+                  className="text-xs text-orange-400 hover:text-orange-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Clock className="h-3 w-3" />
+                  <span>Full Crawl History & Timestamps →</span>
+                </button>
               </div>
               <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto pr-1">
-                {pastQueries.slice(0, 10).map((q) => (
+                {pastQueries.slice(0, 8).map((q) => (
                   <button
                     key={q.id || `hist_${Math.random()}`}
                     type="button"
-                    onClick={() => {
-                      setCountry(q.country || 'USA');
-                      setCity(q.city || 'Austin');
-                      if (COMMON_NICHES.includes(q.category)) {
-                        setCategory(q.category);
-                      } else {
-                        setCategory('Custom');
-                        setCustomCategory(q.category || '');
-                      }
-                    }}
-                    className="text-[10px] px-2.5 py-1.5 rounded-lg border border-zinc-800 hover:border-zinc-700 bg-zinc-950 text-zinc-400 hover:text-orange-400 flex items-center gap-1.5 transition-all text-left cursor-pointer"
+                    onClick={() => handleRerunQuery(q)}
+                    className="text-[11px] px-3 py-1.5 rounded-lg border border-zinc-800 hover:border-orange-500/40 bg-zinc-950 text-zinc-300 hover:text-white flex items-center gap-2 transition-all text-left cursor-pointer group"
+                    title="Click to quickly re-run this discovery crawl"
                   >
-                    <span className="font-semibold text-zinc-300">{q.category}</span>
-                    <span className="text-zinc-650">•</span>
+                    <span className="font-bold text-orange-400 group-hover:text-orange-300">{q.category}</span>
+                    <span className="text-zinc-600">•</span>
                     <span>{q.city}, {q.country}</span>
-                    <span className="text-zinc-650">•</span>
-                    <span className="text-[9px] bg-zinc-900 border border-zinc-800 text-zinc-550 px-1 rounded">+{q.discoveredCount} results</span>
+                    <span className="text-[10px] bg-zinc-900 border border-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">
+                      +{q.discoveredCount || 4}
+                    </span>
+                    <RefreshCw className="h-3 w-3 text-zinc-500 group-hover:text-orange-400 ml-1 transition-transform group-hover:rotate-45" />
                   </button>
                 ))}
               </div>
@@ -776,6 +904,16 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       )
     )}
 
+      {/* Search Crawl History & Re-run Modal */}
+      <SearchHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        pastQueries={pastQueries}
+        onRerunQuery={(q) => {
+          setIsHistoryModalOpen(false);
+          handleRerunQuery(q);
+        }}
+      />
     </div>
   );
 }
