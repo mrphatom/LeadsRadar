@@ -19,6 +19,7 @@ import CheckoutSandbox from './components/CheckoutSandbox';
 import SubscriptionModal from './components/SubscriptionModal';
 import { PREPOPULATED_LEADS } from './seedData';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { sanitizeLeadArray } from './utils/leadSanitizer';
 // @ts-ignore
 import brandLogo from './assets/images/logo_1779885424761.png';
 import { 
@@ -124,7 +125,7 @@ function AppContent() {
     try {
       const cachedLeads = localStorage.getItem(fallbackLeadsKey);
       if (cachedLeads) {
-        setLeads(JSON.parse(cachedLeads));
+        setLeads(sanitizeLeadArray(JSON.parse(cachedLeads)));
       }
       const cachedQueries = localStorage.getItem(fallbackQueriesKey);
       if (cachedQueries) {
@@ -145,13 +146,14 @@ function AppContent() {
       // Sort chronological descending
       loadedLeads.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
+      const sanitizedLeads = sanitizeLeadArray(loadedLeads);
       try {
-        localStorage.setItem(fallbackLeadsKey, JSON.stringify(loadedLeads));
+        localStorage.setItem(fallbackLeadsKey, JSON.stringify(sanitizedLeads));
       } catch (err) {
         console.warn("Failed to update local cached leads backup:", err);
       }
 
-      setLeads(loadedLeads);
+      setLeads(sanitizedLeads);
       setSyncing(false);
     }, (error) => {
       console.warn("Background leads database sync failed gently (permissions/connection issues):", error);
@@ -237,7 +239,7 @@ function AppContent() {
       return;
     }
 
-    const formattedDiscoveries = newLeads.map((newL, index) => {
+    const formattedDiscoveries = sanitizeLeadArray(newLeads.map((newL, index) => {
       const leadId = newL.id || `lead_crawl_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 5)}`;
       return {
         ...newL,
@@ -255,7 +257,7 @@ function AppContent() {
           }
         ]
       };
-    });
+    }));
 
     // Proactively update local UI state instantly
     setLeads(prev => {
@@ -1007,6 +1009,7 @@ function AppContent() {
                     lead={lead}
                     onSelect={setSelectedLead}
                     onStatusChange={handleStatusChange}
+                    onUpdate={handleUpdateLead}
                     isSelected={selectedLeadIds.has(lead.id)}
                     onToggleSelect={() => handleToggleSelectLead(lead.id)}
                   />

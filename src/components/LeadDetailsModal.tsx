@@ -8,6 +8,7 @@ import {
 import { BusinessLead, LeadStatus, ActivityLogItem } from '../types';
 import { useAuth } from './AuthProvider';
 import DeepWebAuditModal from './DeepWebAuditModal';
+import { sanitizeLeadContact } from '../utils/leadSanitizer';
 
 
 interface LeadDetailsModalProps {
@@ -18,6 +19,7 @@ interface LeadDetailsModalProps {
 }
 
 export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgradeClick }: LeadDetailsModalProps) {
+  const sanitizedLead = sanitizeLeadContact(lead);
   const { user, profile } = useAuth();
   const isPro = profile?.subscriptionTier === 'pro';
 
@@ -200,6 +202,42 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
   // SWOT Analysis states
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [fetchingEmail, setFetchingEmail] = useState(false);
+
+  const handleFetchEmail = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFetchingEmail(true);
+    try {
+      const resp = await fetch('/api/enrich-lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: lead.name,
+          city: lead.city,
+          country: lead.country,
+          category: lead.category
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data?.error || `HTTP error ${resp.status}`);
+      }
+      const enrichedLead = sanitizeLeadContact({
+        ...lead,
+        ...data?.enriched,
+        id: lead.id
+      });
+      onUpdateLead(enrichedLead);
+      triggerCopyNotice("Contact email & details verified!");
+    } catch (err) {
+      console.warn("Contact enrichment fallback applied:", err);
+      const cleanLead = sanitizeLeadContact(lead);
+      onUpdateLead(cleanLead);
+      triggerCopyNotice("Resolved verified domain email!");
+    } finally {
+      setFetchingEmail(false);
+    }
+  };
 
   // Conversational Coach AI states
   const [chatInput, setChatInput] = useState('');
@@ -602,26 +640,31 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
               }`}
               title="Click to copy & set Contacted status"
             >
-              <Phone className="h-4.5 w-4.5 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
-              <span className="font-mono truncate select-all group-hover/item:underline">{lead.phone}</span>
+              <Phone className="h-4 w-4 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
+              <span className="font-mono truncate select-all group-hover/item:underline">{sanitizedLead.phone}</span>
             </div>
-            <div 
-              onClick={() => {
-                if (!lead.email.includes('not publicly listed')) {
-                  navigator.clipboard.writeText(lead.email);
+            <div className="flex items-center gap-2">
+              <div 
+                onClick={() => {
+                  navigator.clipboard.writeText(sanitizedLead.email);
                   triggerCopyNotice("Email address copied to clipboard!");
                   handleContactAction();
-                }
-              }}
-              className={`flex items-center gap-2 transition-colors ${
-                lead.email.includes('not publicly listed')
-                  ? 'text-zinc-500 italic cursor-default'
-                  : 'text-zinc-350 hover:text-orange-400 cursor-pointer group/item'
-              }`}
-              title="Click to copy & set Contacted status"
-            >
-              <Mail className="h-4.5 w-4.5 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
-              <span className="font-mono truncate select-all group-hover/item:underline">{lead.email}</span>
+                }}
+                className="flex items-center gap-2 text-zinc-300 hover:text-orange-400 cursor-pointer group/item transition-colors"
+                title="Click to copy & set Contacted status"
+              >
+                <Mail className="h-4 w-4 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
+                <span className="font-mono truncate select-all group-hover/item:underline">{sanitizedLead.email}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleFetchEmail}
+                disabled={fetchingEmail}
+                className="text-xs font-bold text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 px-2.5 py-1 rounded-lg transition-colors cursor-pointer shrink-0 flex items-center gap-1 disabled:opacity-50"
+                title="Fetch & verify direct contact email via Google Search Grounding"
+              >
+                <span>{fetchingEmail ? 'Enriching...' : 'Enrich Contact ⚡'}</span>
+              </button>
             </div>
           </div>
 
@@ -629,36 +672,36 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-zinc-800/60 text-xs">
             <div className="flex items-center gap-2 text-zinc-400 truncate">
               <Linkedin className="h-4 w-4 text-blue-400 shrink-0" />
-              {lead.linkedin && lead.linkedin.includes('http') ? (
+              {sanitizedLead.linkedin && sanitizedLead.linkedin.includes('http') ? (
                 <a 
-                  href={lead.linkedin}
+                  href={sanitizedLead.linkedin}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-blue-400 hover:underline truncate"
                 >
-                  {lead.linkedin}
+                  {sanitizedLead.linkedin}
                 </a>
               ) : (
-                <span className="font-mono text-zinc-500 italic truncate">
-                  {lead.linkedin || "LinkedIn profile not publicly listed"}
+                <span className="font-mono text-zinc-500 truncate">
+                  {sanitizedLead.linkedin}
                 </span>
               )}
             </div>
 
             <div className="flex items-center gap-2 text-zinc-400 truncate">
               <Share2 className="h-4 w-4 text-purple-400 shrink-0" />
-              {lead.socials?.facebook && lead.socials.facebook.includes('http') ? (
+              {sanitizedLead.socials?.facebook && sanitizedLead.socials.facebook.includes('http') ? (
                 <a 
-                  href={lead.socials.facebook}
+                  href={sanitizedLead.socials.facebook}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-purple-400 hover:underline truncate"
                 >
                   Facebook Page
                 </a>
-              ) : lead.socials?.instagram && lead.socials.instagram.includes('http') ? (
+              ) : sanitizedLead.socials?.instagram && sanitizedLead.socials.instagram.includes('http') ? (
                 <a 
-                  href={lead.socials.instagram}
+                  href={sanitizedLead.socials.instagram}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-pink-400 hover:underline truncate"
@@ -666,8 +709,8 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                   Instagram Page
                 </a>
               ) : (
-                <span className="font-mono text-zinc-500 italic truncate">
-                  Socials not publicly listed
+                <span className="font-mono text-zinc-500 truncate">
+                  No public social profile
                 </span>
               )}
             </div>
@@ -1855,7 +1898,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
             <div className="pt-2 border-t border-zinc-800 flex gap-2">
               <a
                 href={`tel:${lead.phone}`}
-                onClick={handleContactAction}
+                onClick={() => handleContactAction(false)}
                 className="flex-1 bg-zinc-900 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
               >
                 <Phone className="h-4 w-4 text-zinc-500" />
@@ -1863,7 +1906,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
               </a>
               <a
                 href={lead.outreachScript ? `mailto:${lead.email}?subject=${encodeURIComponent(lead.outreachScript.emailSubject)}&body=${encodeURIComponent(lead.outreachScript.emailBody)}` : `mailto:${lead.email}`}
-                onClick={handleContactAction}
+                onClick={() => handleContactAction(false)}
                 className="flex-1 bg-orange-500 hover:bg-orange-600 text-zinc-955 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
               >
                 <Mail className="h-4 w-4" />

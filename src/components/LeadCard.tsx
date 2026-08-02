@@ -1,6 +1,7 @@
 import { BusinessLead, LeadStatus } from '../types';
 import { Phone, Mail, MapPin, ClipboardList, Send, Copy, Check, ChevronRight, Linkedin, Globe, ShieldCheck, AlertCircle } from 'lucide-react';
 import React, { useState } from 'react';
+import { sanitizeLeadContact } from '../utils/leadSanitizer';
 
 interface LeadCardProps {
   key?: string;
@@ -9,6 +10,7 @@ interface LeadCardProps {
   onStatusChange: (leadId: string, newStatus: LeadStatus) => void;
   isSelected?: boolean;
   onToggleSelect?: () => void;
+  onUpdate?: (lead: BusinessLead) => void;
 }
 
 const statusThemes: Record<LeadStatus, { label: string; bg: string; text: string; dot: string; cardBorder: string; cardBg: string }> = {
@@ -62,9 +64,45 @@ const statusThemes: Record<LeadStatus, { label: string; bg: string; text: string
   },
 };
 
-export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = false, onToggleSelect }: LeadCardProps) {
+export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = false, onToggleSelect, onUpdate }: LeadCardProps) {
+  const sanitizedLead = sanitizeLeadContact(lead);
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
+  const [fetchingEmail, setFetchingEmail] = useState(false);
+
+  const handleFetchEmail = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFetchingEmail(true);
+    try {
+      const resp = await fetch('/api/enrich-lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: lead.name,
+          city: lead.city,
+          country: lead.country,
+          category: lead.category
+        })
+      });
+      const data = await resp.json();
+      const enrichedLead = sanitizeLeadContact({
+        ...lead,
+        ...data?.enriched,
+        id: lead.id
+      });
+      if (onUpdate) {
+        onUpdate(enrichedLead);
+      }
+    } catch (err) {
+      console.warn("Contact enrichment fallback applied:", err);
+      const cleanLead = sanitizeLeadContact(lead);
+      if (onUpdate) {
+        onUpdate(cleanLead);
+      }
+    } finally {
+      setFetchingEmail(false);
+    }
+  };
 
   const handleContactAction = () => {
     if (lead.status === 'new') {
@@ -189,14 +227,14 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
           <div className="flex items-center justify-between text-xs text-zinc-400 hover:text-white transition-all">
             <div 
               className="flex items-center gap-2 truncate cursor-pointer hover:underline decoration-orange-500/40"
-              onClick={() => copyToClipboard(lead.phone, 'phone')}
+              onClick={() => copyToClipboard(sanitizedLead.phone, 'phone')}
               title="Click to copy phone & set Contacted"
             >
               <Phone className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
-              <span className="font-mono truncate select-all">{lead.phone}</span>
+              <span className="font-mono truncate select-all">{sanitizedLead.phone}</span>
             </div>
             <button
-              onClick={() => copyToClipboard(lead.phone, 'phone')}
+              onClick={() => copyToClipboard(sanitizedLead.phone, 'phone')}
               className="text-zinc-500 hover:text-orange-400 p-1 shrink-0 transition-colors cursor-pointer"
               title="Copy Phone & set Contacted"
             >
@@ -208,33 +246,42 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
           <div className="flex items-center justify-between text-xs text-zinc-400 hover:text-white transition-all">
             <div 
               className="flex items-center gap-2 truncate cursor-pointer hover:underline decoration-orange-500/40"
-              onClick={() => copyToClipboard(lead.email, 'email')}
+              onClick={() => copyToClipboard(sanitizedLead.email, 'email')}
               title="Click to copy email & set Contacted"
             >
               <Mail className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
-              <span className={`truncate font-mono select-all ${lead.email.includes('not publicly listed') ? 'text-zinc-500 italic' : ''}`}>
-                {lead.email}
+              <span className="truncate font-mono select-all">
+                {sanitizedLead.email}
               </span>
             </div>
-            {!lead.email.includes('not publicly listed') && (
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
-                onClick={() => copyToClipboard(lead.email, 'email')}
-                className="text-zinc-500 hover:text-orange-400 p-1 shrink-0 transition-colors cursor-pointer"
+                type="button"
+                onClick={handleFetchEmail}
+                disabled={fetchingEmail}
+                className="text-[10px] font-bold text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 px-2 py-0.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                title="Fetch & verify direct contact email"
+              >
+                <span>{fetchingEmail ? 'Enriching...' : 'Enrich ⚡'}</span>
+              </button>
+              <button
+                onClick={() => copyToClipboard(sanitizedLead.email, 'email')}
+                className="text-zinc-500 hover:text-orange-400 p-1 transition-colors cursor-pointer"
                 title="Copy Email & set Contacted"
               >
                 {copiedEmail ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
               </button>
-            )}
+            </div>
           </div>
 
           {/* LinkedIn row */}
-          {lead.linkedin && (
+          {sanitizedLead.linkedin && (
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <div className="flex items-center gap-2 truncate">
                 <Linkedin className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-                {lead.linkedin.includes('http') ? (
+                {sanitizedLead.linkedin.includes('http') ? (
                   <a 
-                    href={lead.linkedin} 
+                    href={sanitizedLead.linkedin} 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="truncate font-mono text-blue-400 hover:underline"
@@ -243,7 +290,7 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
                     LinkedIn Profile
                   </a>
                 ) : (
-                  <span className="truncate font-mono text-zinc-500 italic">{lead.linkedin}</span>
+                  <span className="truncate font-mono text-zinc-500">{sanitizedLead.linkedin}</span>
                 )}
               </div>
             </div>
