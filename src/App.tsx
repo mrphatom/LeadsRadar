@@ -11,7 +11,6 @@ const AnalyticsDashboard = lazy(() => import('./components/AnalyticsDashboard'))
 const SecurityAuditModal = lazy(() => import('./components/SecurityAuditModal'));
 const LeadDetailsModal = lazy(() => import('./components/LeadDetailsModal'));
 const AddLeadModal = lazy(() => import('./components/AddLeadModal'));
-const CheckoutSandbox = lazy(() => import('./components/CheckoutSandbox'));
 const SubscriptionModal = lazy(() => import('./components/SubscriptionModal'));
 import LeadCard, { LeadCardSkeleton } from './components/LeadCard';
 import { checkGuestSearchLimit, checkGuestSaveLimit } from './services/guestAuditService';
@@ -51,7 +50,6 @@ function AppContent() {
   // Subscription management states
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [paystackSuccessNotice, setPaystackSuccessNotice] = useState<string | null>(null);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
   useEffect(() => {
@@ -71,42 +69,6 @@ function AppContent() {
     link.href = brandLogo;
   }, []);
 
-  useEffect(() => {
-    if (window.location.pathname !== '/billing-success' || !user) return;
-
-    const reference = new URLSearchParams(window.location.search).get('reference');
-    if (!reference) {
-      setPaystackSuccessNotice('We could not find a payment reference. Your account was not upgraded.');
-      return;
-    }
-
-    let active = true;
-    apiFetch('/api/paystack/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reference }),
-    })
-      .then(async (response) => {
-        const data = await response.json().catch(() => null);
-        if (!response.ok || !data?.verified) {
-          throw new Error('Payment verification failed.');
-        }
-        if (active) {
-          window.history.replaceState({}, document.title, '/');
-          setPaystackSuccessNotice('Your LeadsRadar Pro payment was verified successfully.');
-          setTimeout(() => setPaystackSuccessNotice(null), 10000);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setPaystackSuccessNotice('We could not verify this payment yet. Your account was not upgraded.');
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [user]);
   
   // Dashboard/CRM Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -629,11 +591,6 @@ function AppContent() {
     );
   }
 
-  // Development-only payment simulator; production checkout returns only provider URLs.
-  if (import.meta.env.DEV && user && window.location.pathname === '/checkout-sandbox') {
-    return <Suspense fallback={<div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center text-sm">Loading checkout…</div>}><CheckoutSandbox /></Suspense>;
-  }
-
   // Not logged in -> Show Sign in panel
   if (!user) {
     return <AuthView />;
@@ -801,15 +758,6 @@ function AppContent() {
           )}
         </div>
       </header>
-
-      {paystackSuccessNotice && (
-        <div className="max-w-7xl mx-auto px-6 pt-6">
-          <div className="bg-emerald-500/10 border border-emerald-500/25 p-4 rounded-2xl text-emerald-400 text-xs font-semibold flex items-center gap-3 animate-fadeIn">
-            <CheckSquare className="h-4.5 w-4.5 text-emerald-400 shrink-0" />
-            <span>{paystackSuccessNotice}</span>
-          </div>
-        </div>
-      )}
 
       {/* Main Container screen content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
@@ -1174,7 +1122,7 @@ function AppContent() {
                   <Lock className="h-4 w-4 text-orange-400 shrink-0 mt-0.5" />
                   <div>
                     <div className="font-semibold text-white">256-bit Cloud Workspace Encryption</div>
-                    <div className="text-[11px] text-zinc-400">Personalized Firestore data isolation & Paystack verified checkout.</div>
+                    <div className="text-[11px] text-zinc-400">Personalized Firestore data isolation & MoonPay verified on-ramp.</div>
                   </div>
                 </div>
               </div>

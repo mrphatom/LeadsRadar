@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
+    "@moonpay/moonpay-js": "^0.7.6",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "cors": "^2.8.6",

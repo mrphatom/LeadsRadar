@@ -7,7 +7,11 @@ export interface RuntimeConfig {
   allowDemoMode: boolean;
   jsonBodyLimit: string;
   encryptionKey?: string;
-  paystackCurrency: string;
+  moonpayEnvironment: 'sandbox' | 'production';
+  moonpayBaseCurrencyCode: string;
+  moonpayCurrencyCode: string;
+  moonpayMonthlyAmount: string;
+  moonpayYearlyAmount: string;
 }
 
 function readBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -41,6 +45,14 @@ export function getRuntimeConfig(env: NodeJS.ProcessEnv): RuntimeConfig {
     .filter(Boolean);
   const allowedOrigins = Array.from(new Set([appUrl, ...configuredOrigins]));
 
+  const moonpayEnvironment = env.MOONPAY_ENVIRONMENT || (isProduction ? 'production' : 'sandbox');
+  if (moonpayEnvironment !== 'sandbox' && moonpayEnvironment !== 'production') {
+    throw new Error('MOONPAY_ENVIRONMENT must be sandbox or production.');
+  }
+  if (isProduction && moonpayEnvironment !== 'production') {
+    throw new Error('MOONPAY_ENVIRONMENT must be production in production.');
+  }
+
   const encryptionKey = env.ENCRYPTION_KEY?.trim() || undefined;
   if (isProduction && !encryptionKey) {
     throw new Error('ENCRYPTION_KEY is required in production.');
@@ -58,6 +70,10 @@ export function getRuntimeConfig(env: NodeJS.ProcessEnv): RuntimeConfig {
     allowDemoMode: !isProduction && readBoolean(env.ALLOW_DEMO_MODE, true),
     jsonBodyLimit: env.JSON_BODY_LIMIT || '256kb',
     encryptionKey,
-    paystackCurrency: env.PAYSTACK_CURRENCY || 'USD',
+    moonpayEnvironment,
+    moonpayBaseCurrencyCode: (env.MOONPAY_BASE_CURRENCY_CODE || 'usd').toLowerCase(),
+    moonpayCurrencyCode: (env.MOONPAY_CURRENCY_CODE || 'usdc').toLowerCase(),
+    moonpayMonthlyAmount: env.MOONPAY_MONTHLY_AMOUNT || '7',
+    moonpayYearlyAmount: env.MOONPAY_YEARLY_AMOUNT || '64',
   };
 }

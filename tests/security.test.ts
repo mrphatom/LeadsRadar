@@ -142,3 +142,16 @@ test('derives the principal from verified claims and never trusts request uid', 
     claims: { uid: 'verified-user', email: 'verified@example.com', email_verified: true },
   });
 });
+
+test('exposes safe MoonPay defaults from runtime configuration', () => {
+  const config = getRuntimeConfig({ NODE_ENV: 'development', APP_URL: 'http://localhost:3000' });
+  assert.equal(config.moonpayEnvironment, 'sandbox');
+  assert.equal(config.moonpayBaseCurrencyCode, 'usd');
+  assert.equal(config.moonpayCurrencyCode, 'usdc');
+  assert.equal(config.moonpayMonthlyAmount, '7');
+  assert.equal(config.moonpayYearlyAmount, '64');
+  assert.throws(
+    () => getRuntimeConfig({ NODE_ENV: 'production', APP_URL: 'https://app.example.com', ENCRYPTION_KEY: 'x'.repeat(32), MOONPAY_ENVIRONMENT: 'sandbox' }),
+    /MOONPAY_ENVIRONMENT must be production in production/,
+  );
+});

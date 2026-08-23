@@ -82,8 +82,16 @@ service cloud.firestore {
         && (!('outlookEmail' in user) || (user.outlookEmail is string && user.outlookEmail.size() <= 320))
         && (!('encryptedOutlookToken' in user) || (user.encryptedOutlookToken is string && user.encryptedOutlookToken.size() <= 4096))
         && (!('lastPaymentReference' in user) || (user.lastPaymentReference is string && user.lastPaymentReference.size() <= 200))
+        // Historical provider values remain readable during the additive migration;
+        // client updates cannot modify this field because it is absent from the update allowlist.
         && (!('subscriptionSource' in user) || (user.subscriptionSource is string && user.subscriptionSource.size() <= 64))
         && (!('updatedAt' in user) || (user.updatedAt is string && user.updatedAt.size() <= 128));
+    }
+
+    // MoonPay orders are created and fulfilled only by the Express Admin SDK.
+    // Keeping this explicit prevents a client from creating pending orders or marking payments complete.
+    match /moonpayOrders/{orderId} {
+      allow read, write: if false;
     }
 
     match /leads/{leadId} {

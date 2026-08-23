@@ -2,7 +2,7 @@ name: LeadsRadar CI
 
 on:
   push:
-    branches: [main, master, feat/production-hardening]
+    branches: [main, master, feat/production-hardening, feat/moonpay-fiat-onramp]
   pull_request:
 
 permissions:
@@ -30,6 +30,9 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Run Firestore rules tests
+        run: npm run test:rules
 
       - name: Build production artifacts
         run: npm run build

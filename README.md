@@ -85,7 +85,7 @@ FIREBASE_PROJECT_ID=your_firebase_project_id_here
 
 ## Production deployment
 
-LeadsRadar now defaults to fail-closed production behavior. Configure `NODE_ENV=production`, an HTTPS `APP_URL`, `GEMINI_API_KEY`, `FIREBASE_SERVICE_ACCOUNT`, `ENCRYPTION_KEY` with at least 32 UTF-8 bytes, and `PAYSTACK_SECRET_KEY` for billing. Optional values include `PORT`, `ALLOWED_ORIGINS`, `PAYSTACK_CURRENCY`, and `JSON_BODY_LIMIT`. See [`docs/production-operations.md`](docs/production-operations.md) for the complete environment contract, Paystack webhook setup, credential-storage model, incident checks, and rollback procedure.
+LeadsRadar now defaults to fail-closed production behavior. Configure `NODE_ENV=production`, an HTTPS `APP_URL`, `GEMINI_API_KEY`, `FIREBASE_SERVICE_ACCOUNT`, and `ENCRYPTION_KEY` with at least 32 UTF-8 bytes. MoonPay billing additionally requires `MOONPAY_PUBLISHABLE_KEY`, `MOONPAY_SECRET_KEY`, `MOONPAY_WEBHOOK_SECRET`, and `TREASURY_WALLET_ADDRESS`; set `MOONPAY_ENVIRONMENT=sandbox` locally and `production` in production. Optional pricing/currency values are `MOONPAY_BASE_CURRENCY_CODE`, `MOONPAY_CURRENCY_CODE`, `MOONPAY_MONTHLY_AMOUNT`, and `MOONPAY_YEARLY_AMOUNT`. See [`docs/production-operations.md`](docs/production-operations.md) for the complete environment contract, MoonPay signed checkout and webhook setup, credential-storage model, incident checks, and rollback procedure. For a safe local provider test, follow [`docs/moonpay-sandbox-testing.md`](docs/moonpay-sandbox-testing.md).
 
 All protected API calls require a verified Firebase ID token. Pro access and subscription state are server-authoritative and are never granted from browser localStorage or a client-controlled Firestore write. Gmail tokens are encrypted and stored outside the client-readable profile document. Discovery responses expose grounding citations when available; synthetic or unverified fallbacks are labeled and should not be treated as verified business data.
 
@@ -93,7 +93,11 @@ The weekly scan planner is a manual browser-session workflow, not a persistent b
 
 Grounded lead discovery enforces the daily search allowance on the server, using the verified Firebase UID, UTC calendar day, and the subscription tier stored by the server. Free and Pro limits are not controlled by browser localStorage. The generic Express IP rate limiter is an abuse-control layer and is intentionally separate from product entitlement.
 
-Provider failures do not create verified business facts. Missing contact fields remain explicit, LinkedIn/social enrichment falls back to an unverified empty state, and synthetic development data is labeled as synthetic. Before release, follow [`docs/production-operations.md`](docs/production-operations.md) and [`security_spec.md`](security_spec.md). No Firebase rules, Paystack configuration, credential rotation, or cloud deployment is performed by the repository hardening workflow.
+Provider failures do not create verified business facts. Missing contact fields remain explicit, LinkedIn/social enrichment falls back to an unverified empty state, and synthetic development data is labeled as synthetic. Before release, follow [`docs/production-operations.md`](docs/production-operations.md) and [`security_spec.md`](security_spec.md). No Firebase rules, MoonPay configuration, credential rotation, database migration, or cloud deployment is performed by this workflow.
+
+## MoonPay sandbox testing
+
+Use `MOONPAY_ENVIRONMENT=sandbox` with MoonPay test keys only. The browser opens the official MoonPay overlay through `@moonpay/moonpay-js`; Pro activation is still controlled by the signed webhook and server-created order. See [`docs/moonpay-sandbox-testing.md`](docs/moonpay-sandbox-testing.md) for the complete local workflow.
 
 ## Validation
 

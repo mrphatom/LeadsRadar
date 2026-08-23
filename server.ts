@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import fs from "fs";
 import cors from "cors";
@@ -14,13 +15,14 @@ import { getRuntimeConfig } from "./src/server/runtimeConfig.ts";
 import { errorHandler, logEvent, requestContext, requireAuth, requirePrincipal, requirePro, sendApiError, validateBody } from "./src/server/http.ts";
 import { ApiError, isAllowedOrigin } from "./src/server/security.ts";
 import { createEncryptionService } from "./src/server/crypto.ts";
-import { isVerifiedPaystackTransaction, parsePaystackMetadata, verifyPaystackSignature } from "./src/server/payments.ts";
+import { buildMoonPayWidgetUrl, extractMoonPayOrderId, signMoonPayUrl, verifyMoonPayWebhookSignature } from "./src/server/moonpay.ts";
+import { fulfillMoonPaySubscription } from "./src/server/moonpayFulfillment.ts";
 import { consumeDailySearchQuota } from "./src/server/quotas.ts";
 import { sanitizeLeadContact } from "./src/utils/leadSanitizer.ts";
 import {
   chatAssistantSchema,
-  checkoutSessionSchema,
-  paystackVerifySchema,
+  moonpaySignUrlSchema,
+  moonpayWebhookEventSchema,
   enrichLeadSchema,
   generateAnalysisSchema,
   generatePitchSchema,
@@ -149,7 +151,7 @@ const authenticate = requireAuth(async (token) => {
 });
 
 app.use("/api", (req, res, next) => {
-  if (req.path === "/config" || req.path === "/paystack/webhook") {
+  if (req.path === "/config" || req.path === "/webhooks/moonpay") {
     next();
     return;
   }
@@ -934,245 +936,104 @@ Return strictly a valid raw JSON object matching the following Schema. Do not in
   }
 });
 
-// Create subscription Paystack checkout session (falls back to local sandbox in preview mode if secret missing or mismatched)
-app.post("/api/paystack/create-checkout-session", validateBody(checkoutSessionSchema), async (req, res) => {
-  const { period } = req.body;
-  const principal = requirePrincipal(req);
-  const paystackEmail = principal.email;
-  const successUrl = new URL('/billing-success', runtimeConfig.appUrl).toString();
-  const cancelUrl = new URL('/', runtimeConfig.appUrl).toString();
-  const hasPaystackKey = !!process.env.PAYSTACK_SECRET_KEY;
+// MoonPay Fiat On-Ramp signing and fulfillment
+const MOONPAY_BASE_CURRENCY_CODE = runtimeConfig.moonpayBaseCurrencyCode;
+const MOONPAY_CURRENCY_CODE = runtimeConfig.moonpayCurrencyCode;
+const MOONPAY_MONTHLY_AMOUNT = runtimeConfig.moonpayMonthlyAmount;
+const MOONPAY_YEARLY_AMOUNT = runtimeConfig.moonpayYearlyAmount;
 
-  if (!paystackEmail || !paystackEmail.includes('@')) {
-    return sendApiError(res, req, new ApiError(422, 'VALIDATION_ERROR', 'A verified account email is required for checkout.'));
-  }
-
-  if (!hasPaystackKey) {
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Payment service is temporarily unavailable.'));
-    }
-    return res.json({
-      isMock: true,
-      url: `/checkout-sandbox?period=${period}&success_url=${encodeURIComponent(successUrl)}&cancel_url=${encodeURIComponent(cancelUrl)}`
-    });
-  }
-
-  try {
-    let currency = process.env.PAYSTACK_CURRENCY;
-
-    // Proactively auto-detect the merchant's currency to avoid currency/channel mismatches
-    try {
-      const balanceResponse = await fetchWithTimeout("https://api.paystack.co/balance", {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        }
-      });
-      if (balanceResponse.ok) {
-        const balanceData = (await balanceResponse.json()) as any;
-        if (balanceData.status && Array.isArray(balanceData.data) && balanceData.data.length > 0) {
-          // Find first available currency
-          const detectedCurrency = balanceData.data[0]?.currency;
-          if (detectedCurrency) {
-            currency = detectedCurrency;
-            console.log(`Auto-detected Paystack merchant currency from balance API: ${currency}`);
-          }
-        }
-      } else {
-        console.warn(`Paystack balance endpoint returned status ${balanceResponse.status}. Using environment currency placeholder.`);
-      }
-    } catch (detectErr) {
-      console.error("Could not auto-detect Paystack account currency, falling back to configuration:", detectErr);
-    }
-
-    // Default currency if none matches
-    if (!currency) {
-      currency = "NGN";
-    }
-
-    const cur = currency.toUpperCase();
-    let finalAmount = period === 'year' ? 640000 : 70000; // standard equivalent default (6,400 or 700 in base cents/pesewas)
-    
-    // Scale amount precisely to the native base transaction scale of the detected currency
-    if (cur === "NGN") {
-      finalAmount = period === 'year' ? 9000000 : 1000000; // 90,000 NGN or 10,000 NGN
-    } else if (cur === "USD") {
-      finalAmount = period === 'year' ? 6400 : 700; // 64 USD or 7 USD
-    } else if (cur === "GHS") {
-      finalAmount = period === 'year' ? 90000 : 10000; // 900 GHS or 100 GHS in pesewas
-    } else if (cur === "KES") {
-      finalAmount = period === 'year' ? 900000 : 100000; // 9,000 KES or 1,000 KES in cents
-    } else if (cur === "ZAR") {
-      finalAmount = period === 'year' ? 130000 : 15000; // 1,300 ZAR or 150 ZAR in cents
-    }
-
-    logEvent("info", "paystack_checkout_initialized", req, { amount: finalAmount, currency: cur, period });
-
-    let response = await fetchWithTimeout("https://api.paystack.co/transaction/initialize", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        email: paystackEmail,
-        amount: finalAmount,
-        currency: cur,
-        callback_url: successUrl,
-        metadata: {
-          tier: 'pro',
-          period,
-          uid: principal.uid
-        }
-      })
-    });
-
-    // Handle channel/currency mismatched configurations automatically as defensive backup
-    if (!response.ok) {
-      const errText = await response.text();
-      let parsedErr: any = {};
-      try { parsedErr = JSON.parse(errText); } catch (e) {}
-
-      const errMsg = (parsedErr.message || "").toLowerCase();
-      const isChannelOrCurrencyError = errMsg.includes("channel") || errMsg.includes("currency") || errMsg.includes("param");
-
-      if (isChannelOrCurrencyError) {
-        console.warn("Paystack channel/currency mismatches during init. Retrying with default dashboard settings...");
-        
-        // Let Paystack default the currency, but reset amount to its base pricing scale to avoid huge charged units
-        const fallbackAmount = period === 'year' ? 70000 : 10000; // 70,000 or 10,000 safe minimum default
-        response = await fetchWithTimeout("https://api.paystack.co/transaction/initialize", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            email: paystackEmail,
-            amount: fallbackAmount,
-            callback_url: successUrl,
-            metadata: {
-              tier: 'pro',
-              period,
-              uid: principal.uid
-            }
-          })
-        });
-      } else {
-        throw new Error(parsedErr.message || `Paystack API status ${response.status}: ${errText}`);
-      }
-    }
-
-    // Recheck response status after potential retry
-    if (!response.ok) {
-      const finalErrText = await response.text();
-      let parsedFinalErr: any = {};
-      try { parsedFinalErr = JSON.parse(finalErrText); } catch (e) {}
-      throw new Error(parsedFinalErr.message || `Paystack API status ${response.status}: ${finalErrText}`);
-    }
-
-    const resJson = (await response.json()) as any;
-    if (resJson.status && resJson.data?.authorization_url) {
-      res.json({ url: resJson.data.authorization_url, isMock: false });
-    } else {
-      throw new Error(resJson.message || "Failed to retrieve checkout URL from Paystack.");
-    }
-  } catch (err: any) {
-    logEvent("error", "paystack_checkout_failed", req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Payment service is temporarily unavailable.'));
-    }
-    const sandboxUrl = `/checkout-sandbox?period=${period}&success_url=${encodeURIComponent(successUrl)}&cancel_url=${encodeURIComponent(cancelUrl)}`;
-    res.json({ url: sandboxUrl, isMock: true, warning: 'Payment service unavailable; development sandbox returned.' });
-  }
-});
-
-async function grantProSubscription(transactionData: any, uid: string, period: 'month' | 'year'): Promise<void> {
-  if (!db) {
-    throw new Error('Firestore server is not configured.');
-  }
-  const reference = typeof transactionData.reference === 'string' ? transactionData.reference : '';
-  if (!reference) {
-    throw new Error('Payment reference is missing.');
-  }
-
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + (period === 'year' ? 365 : 30));
-  const userRef = db.collection('users').doc(uid);
-
-  await db.runTransaction(async (transaction: any) => {
-    const snapshot = await transaction.get(userRef);
-    const existing = snapshot.data() || {};
-    if (existing.lastPaymentReference === reference && existing.subscriptionTier === 'pro') {
-      return;
-    }
-    transaction.set(userRef, {
-      subscriptionTier: 'pro',
-      subscriptionPeriod: period,
-      subscriptionId: reference,
-      lastPaymentReference: reference,
-      trialExpires: expiresAt.toISOString(),
-      subscriptionSource: 'paystack',
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
-  });
+if (runtimeConfig.isProduction && (!process.env.MOONPAY_PUBLISHABLE_KEY || !process.env.MOONPAY_SECRET_KEY || !process.env.MOONPAY_WEBHOOK_SECRET || !process.env.TREASURY_WALLET_ADDRESS)) {
+  throw new Error('MOONPAY_PUBLISHABLE_KEY, MOONPAY_SECRET_KEY, MOONPAY_WEBHOOK_SECRET, and TREASURY_WALLET_ADDRESS are required in production.');
 }
 
-app.post("/api/paystack/verify", validateBody(paystackVerifySchema), async (req, res) => {
+app.get('/api/moonpay/sign-url', async (req, res) => {
   const principal = requirePrincipal(req);
-  const { reference } = req.body;
-
-  if (!process.env.PAYSTACK_SECRET_KEY) {
-    if (runtimeConfig.allowDemoMode && reference.startsWith('sandbox_')) {
-      await grantProSubscription({ reference, status: 'success', customer: { email: principal.email }, metadata: { uid: principal.uid, tier: 'pro' } }, principal.uid, 'month');
-      return res.json({ verified: true, mode: 'sandbox' });
-    }
-    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Payment service is temporarily unavailable.'));
+  const parsed = moonpaySignUrlSchema.safeParse(req.query);
+  if (!parsed.success) {
+    return sendApiError(res, req, new ApiError(422, 'VALIDATION_ERROR', 'MoonPay checkout parameters are invalid.'));
+  }
+  if (!db || !process.env.MOONPAY_PUBLISHABLE_KEY || !process.env.MOONPAY_SECRET_KEY || !process.env.TREASURY_WALLET_ADDRESS) {
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'MoonPay payment service is not configured.'));
   }
 
+  const period = parsed.data.period;
+  const orderId = 'moonpay_' + randomUUID();
+  const amount = period === 'year' ? MOONPAY_YEARLY_AMOUNT : MOONPAY_MONTHLY_AMOUNT;
+  const environment = runtimeConfig.moonpayEnvironment;
+  const widgetUrl = buildMoonPayWidgetUrl({
+    environment,
+    publishableKey: process.env.MOONPAY_PUBLISHABLE_KEY,
+    baseCurrencyCode: MOONPAY_BASE_CURRENCY_CODE,
+    baseCurrencyAmount: amount,
+    currencyCode: MOONPAY_CURRENCY_CODE,
+    walletAddress: process.env.TREASURY_WALLET_ADDRESS,
+    externalTransactionId: orderId,
+    redirectUrl: new URL('/', runtimeConfig.appUrl).toString(),
+  });
+
   try {
-    const response = await fetchWithTimeout(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
-      headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+    await db.collection('moonpayOrders').doc(orderId).set({
+      uid: principal.uid,
+      period,
+      provider: 'moonpay',
+      status: 'pending',
+      externalTransactionId: orderId,
+      amount,
+      baseCurrencyCode: MOONPAY_BASE_CURRENCY_CODE,
+      currencyCode: MOONPAY_CURRENCY_CODE,
+      walletAddress: process.env.TREASURY_WALLET_ADDRESS,
+      environment,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
-    const payload = await response.json() as { status?: boolean; data?: any };
-    if (!response.ok || !payload.status || !payload.data) {
-      return sendApiError(res, req, new ApiError(402, 'PAYMENT_REQUIRED', 'Payment could not be verified.'));
-    }
-
-    const metadata = parsePaystackMetadata(payload.data.metadata);
-    const period = metadata.period === 'year' ? 'year' : 'month';
-    if (!isVerifiedPaystackTransaction(payload.data, { uid: principal.uid, email: principal.email, tier: 'pro' })) {
-      return sendApiError(res, req, new ApiError(403, 'FORBIDDEN', 'Payment does not belong to this account.'));
-    }
-
-    await grantProSubscription(payload.data, principal.uid, period);
-    logEvent('info', 'paystack_payment_verified', req, { period });
-    return res.json({ verified: true, mode: 'paystack' });
+    const signedUrl = signMoonPayUrl(widgetUrl, process.env.MOONPAY_SECRET_KEY);
+    logEvent('info', 'moonpay_checkout_initialized', req, { provider: 'moonpay', period, environment });
+    return res.json({ provider: 'moonpay', orderId, externalTransactionId: orderId, url: signedUrl.toString(), environment });
   } catch (error) {
-    logEvent('error', 'paystack_payment_verification_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
-    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Payment verification is temporarily unavailable.'));
+    logEvent('error', 'moonpay_checkout_initialization_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'MoonPay checkout could not be initialized.'));
   }
 });
 
-app.post("/api/paystack/webhook", (req, res) => {
-  const signature = req.headers['x-paystack-signature'];
-  const normalizedSignature = Array.isArray(signature) ? signature[0] : signature;
-  const rawBody = req.rawBody || JSON.stringify(req.body);
-  if (!verifyPaystackSignature(rawBody, normalizedSignature, process.env.PAYSTACK_SECRET_KEY)) {
-    return sendApiError(res, req, new ApiError(401, 'UNAUTHORIZED', 'Invalid webhook signature.'));
+app.post('/api/webhooks/moonpay', async (req, res) => {
+  const signatureHeader = req.headers['moonpay-signature-v2'] ?? req.headers['moonpay-signature'];
+  const normalizedSignature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+  const rawBody = req.rawBody;
+  if (!rawBody || !verifyMoonPayWebhookSignature(rawBody, normalizedSignature, process.env.MOONPAY_WEBHOOK_SECRET)) {
+    return sendApiError(res, req, new ApiError(401, 'UNAUTHORIZED', 'Invalid MoonPay webhook signature.'));
   }
 
-  res.status(200).json({ received: true });
-  const event = req.body as { event?: string; data?: any };
-  if (event.event !== 'charge.success' || !event.data) return;
+  const parsed = moonpayWebhookEventSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendApiError(res, req, new ApiError(422, 'VALIDATION_ERROR', 'MoonPay webhook payload is invalid.'));
+  }
+  if (parsed.data.type !== 'transaction_updated') {
+    return res.status(200).json({ received: true, fulfilled: false });
+  }
 
-  const metadata = parsePaystackMetadata(event.data.metadata);
-  const uid = typeof metadata.uid === 'string' ? metadata.uid : '';
-  const email = typeof event.data.customer?.email === 'string' ? event.data.customer.email : undefined;
-  if (!uid || !isVerifiedPaystackTransaction(event.data, { uid, email, tier: 'pro' })) return;
-  const period = metadata.period === 'year' ? 'year' : 'month';
-  void grantProSubscription(event.data, uid, period).catch((error) => {
-    logEvent('error', 'paystack_webhook_fulfillment_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
-  });
+  const transaction = parsed.data.data;
+  if (transaction.status !== 'completed') {
+    return res.status(200).json({ received: true, fulfilled: false });
+  }
+  const externalTransactionId = extractMoonPayOrderId(transaction);
+  if (!externalTransactionId) {
+    logEvent('warn', 'moonpay_webhook_missing_order_id', req, { provider: 'moonpay' });
+    return res.status(200).json({ received: true, fulfilled: false });
+  }
+
+  try {
+    const result = await fulfillMoonPaySubscription(
+      db,
+      externalTransactionId,
+      transaction,
+      process.env.TREASURY_WALLET_ADDRESS || '',
+    );
+    logEvent('info', 'moonpay_webhook_processed', req, { provider: 'moonpay', result });
+    return res.status(200).json({ received: true, fulfilled: result !== 'ignored', result });
+  } catch (error) {
+    logEvent('error', 'moonpay_webhook_fulfillment_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'MoonPay fulfillment is temporarily unavailable.'));
+  }
 });
 
 // Pro Mode: Generate Broader SEO & SWOT Competitor Analysis

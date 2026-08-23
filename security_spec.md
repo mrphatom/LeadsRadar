@@ -165,3 +165,11 @@ Lead documents are owner-only for reads, creates, updates, and deletes. Creates 
 ## 5. Required Behavioral Rule Tests
 
 Before production rules deployment, run authenticated and unauthenticated emulator tests covering owner-only profile reads, cross-user profile denial, rejection of client subscription-field changes, lead ownership and immutable-key enforcement, unknown-key rejection, timestamp immutability, query-history ownership, and synthetic/unverified provenance field acceptance. Syntax compilation alone is not sufficient evidence that these authorization invariants hold.
+
+## 6. MoonPay payment schema and authorization
+
+MoonPay checkout creates a server-owned `moonpayOrders/{orderId}` document with `provider: "moonpay"`, `uid`, `period`, `status: "pending"`, `externalTransactionId`, locked fiat and crypto currency settings, treasury wallet, environment, and timestamps. The Admin SDK alone may create, read, update, or complete these documents; the client has no access under the explicit deny rule.
+
+The completion webhook may activate `users/{uid}` only after authenticating the MoonPay signature, validating a fresh timestamp, requiring `transaction_updated` with `data.status == "completed"`, matching the server-created `moonpay_{uuid}` order, and matching the configured treasury wallet. The fulfillment transaction marks the order completed and updates the existing server-owned subscription fields atomically. Client-created order IDs, browser redirects, and client profile writes are not payment authority.
+
+The migration is additive for existing user documents: the legacy `lastPaymentReference`, `subscriptionId`, and `subscriptionSource` fields remain structurally compatible, while all new server writes use `subscriptionSource: "moonpay"`. Historical records from the retired payment provider must be reviewed and migrated by an authorized Admin SDK procedure before any destructive cleanup; no live migration is performed by this code change.

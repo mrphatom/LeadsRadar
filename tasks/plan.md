@@ -2,10 +2,10 @@
 
 ## Baseline
 
-- Branch: `feat/production-hardening`
+- Branch: `feat/moonpay-fiat-onramp` (based on the hardened `feat/production-hardening` baseline)
 - Base revision: `7b559ef`
 - Existing validation: TypeScript and production build pass; clean `npm ci` fails due lockfile drift; no tests exist; native audit reports vulnerabilities.
-- Safety rule: no live Firebase/Paystack deployment or credential rotation from this workspace.
+- Safety rule: no live Firebase/MoonPay deployment, webhook configuration, database migration, or credential rotation from this workspace.
 
 ## Dependency graph and checkpoints
 
@@ -19,7 +19,7 @@ Add Firebase bearer-token verification, request IDs, structured redacted logging
 
 ### Slice 3 — Server authorization and sensitive integrations
 
-Derive UID from verified claims, enforce resource ownership and plan policy, remove caller-controlled subscription/identity inputs, require authenticated encryption keys, harden Gmail routes, and make Paystack verification/webhook behavior explicit. Checkpoint: API regression tests prove cross-user access and unpaid Pro activation are refused.
+Derive UID from verified claims, enforce resource ownership and plan policy, remove caller-controlled subscription/identity inputs, require authenticated encryption keys, harden Gmail routes, and make MoonPay signing/webhook fulfillment explicit. Checkpoint: API regression tests prove cross-user access and unpaid Pro activation are refused.
 
 ### Slice 4 — Firestore security contract
 

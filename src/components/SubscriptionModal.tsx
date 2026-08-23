@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, Sparkles, Loader2, ArrowRightLeft, ShieldCheck, Zap, Mail, Check, AlertCircle, Link } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { apiFetch } from '../apiClient';
+import { loadMoonPay, type MoonPayWebSdk } from '@moonpay/moonpay-js';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -18,8 +19,8 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
     disconnectOutlook
   } = useAuth();
   const isPro = profile?.subscriptionTier === 'pro';
-  const sandboxAllowed = import.meta.env.DEV;
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year'>('month');
+  const [moonPayWidget, setMoonPayWidget] = useState<MoonPayWebSdk | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,34 +38,52 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
     };
   }, [isOpen]);
 
+  useEffect(() => () => {
+    moonPayWidget?.close();
+  }, [moonPayWidget]);
+
   if (!isOpen) return null;
 
   const handleCheckout = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiFetch('/api/paystack/create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          period: selectedPeriod
-        })
-      });
-
+      const response = await apiFetch(`/api/moonpay/sign-url?period=${selectedPeriod}`);
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error('Failed to bootstrap checkout session.');
+        throw new Error(data?.error?.message || 'Failed to initialize MoonPay checkout.');
+      }
+      if (!data?.url || !data?.environment) {
+        throw new Error('MoonPay did not return a signed checkout URL.');
       }
 
-      const data = await response.json();
-      if (data.url) {
-        // Redirect to Paystack checkout (or sandbox URL)
-        window.location.href = data.url;
-      } else {
-        throw new Error('No checkout URL returned from payment server.');
+      const signedUrl = new URL(data.url);
+      const signature = signedUrl.searchParams.get('signature');
+      signedUrl.searchParams.delete('signature');
+      const moonPay = await loadMoonPay();
+      if (!moonPay) {
+        throw new Error('MoonPay Web SDK could not be loaded.');
       }
+
+      const params = Object.fromEntries(signedUrl.searchParams.entries()) as { apiKey: string; [key: string]: string };
+      const widget = moonPay({
+        flow: 'buy',
+        environment: data.environment === 'sandbox' ? 'sandbox' : 'production',
+        variant: 'overlay',
+        params,
+      });
+      if (!widget) {
+        throw new Error('MoonPay widget could not be initialized.');
+      }
+      if (signature) {
+        widget.updateSignature(signature);
+      }
+      setMoonPayWidget(widget);
+      widget.show();
     } catch (err: any) {
-      console.error("Paystack gateway creation failed:", err);
-      setError(err.message || "Unable to reach Paystack Gateway. Please try again.");
+      console.error('MoonPay checkout initialization failed:', err);
+      setError(err.message || 'Unable to reach MoonPay. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
@@ -253,26 +272,6 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
 
             </div>
 
-            {sandboxAllowed && (
-            <div className="pt-4 border-t border-zinc-900 flex flex-col items-center gap-2 bg-zinc-950/40 p-4 rounded-xl border border-dashed border-orange-500/25">
-              <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest font-bold">Sandbox Testing Console</span>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    throw new Error('Subscription changes are managed by the payment service.');
-                  } catch (err: any) {
-                    alert(err.message || "Failed sandbox toggle.");
-                  }
-                }}
-                className="w-full text-center bg-orange-500/10 hover:bg-orange-500/25 border border-orange-500/30 text-orange-400 py-2 rounded-lg text-xs font-semibold cursor-pointer select-none transition-all flex items-center justify-center gap-1.5"
-              >
-                <Zap className="h-3.5 w-3.5 fill-orange-400 text-orange-400 animate-pulse" />
-                Simulate Account Downgrade to Free Tier
-              </button>
-            </div>
-            )}
-
             <div className="pt-4 border-t border-zinc-850 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
               <span>Subscription ID: <span className="text-zinc-400">{profile?.subscriptionId || 'Active trial session'}</span></span>
               <span>Workspace License Verified</span>
@@ -347,7 +346,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 <li className="flex items-start gap-2.5">
                   <CheckCircle2 className="h-4 w-4 text-orange-400 shrink-0 mt-0.5" />
                   <div>
-                    <strong className="text-white font-semibold">Weekly Radar Automation</strong>: Lock auto-runs to scan territories in the background without manually launching searches.
+                    <strong className="text-white font-semibold">Weekly Scan Planning</strong>: Prepare repeatable territory plans for authenticated manual runs.
                   </div>
                 </li>
               </ul>
@@ -370,40 +369,21 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
               >
                 {loading ? (
                   <>
-                    <Loader2 className="h-4.5 w-4.5 animate-spin" /> Deploying Paystack Workspace...
+                    <Loader2 className="h-4.5 w-4.5 animate-spin" /> Opening MoonPay...
                   </>
                 ) : (
                   <>
-                    <ShieldCheck className="h-4.5 w-4.5" /> Start 3-Day Free Trial
+                    <ShieldCheck className="h-4.5 w-4.5" /> Continue with MoonPay
                   </>
                 )}
               </button>
               
               <div className="text-center">
                 <span className="text-[10px] text-zinc-500 leading-normal block">
-                  💳 Standard credit/debit card required to initiate 3-day trial. Zero charge today. Cancellation is single-click from profile.
+                  MoonPay will open a secure on-ramp for the selected plan. Pro access activates only after a verified completed transaction reaches the configured treasury wallet.
                 </span>
               </div>
 
-              {sandboxAllowed && (
-              <div className="pt-4 border-t border-zinc-900 flex flex-col items-center gap-2 bg-zinc-950/40 p-4 rounded-xl border border-dashed border-orange-500/25">
-                <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest font-bold">Sandbox Testing Console</span>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      throw new Error('Use the development checkout simulator to test payment activation.');
-                    } catch (err: any) {
-                      alert(err.message || "Failed sandbox upgrade.");
-                    }
-                  }}
-                  className="w-full text-center bg-orange-500 hover:bg-orange-600 font-bold text-zinc-950 py-2 rounded-lg text-xs cursor-pointer select-none transition-all flex items-center justify-center gap-1.5"
-                >
-                  <Zap className="h-3.5 w-3.5 fill-zinc-950 text-zinc-950 animate-pulse" />
-                  Instantly Activate Pro Tier
-                </button>
-              </div>
-              )}
             </div>
           </div>
         )}

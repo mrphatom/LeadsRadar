@@ -64,13 +64,14 @@ export const chatAssistantSchema = z.object({
   }).strict()).min(1).max(30),
 }).strict();
 
-export const checkoutSessionSchema = z.object({
+export const moonpaySignUrlSchema = z.object({
   period: z.enum(['month', 'year']).default('month'),
 }).strict();
 
-export const paystackVerifySchema = z.object({
-  reference: boundedText(200),
-}).strict();
+export const moonpayWebhookEventSchema = z.object({
+  type: z.string().trim().min(1).max(128),
+  data: z.record(z.string(), z.unknown()),
+}).passthrough();
 
 export const gmailConnectSchema = z.object({
   email: z.string().trim().email().max(320),

@@ -2,7 +2,7 @@
 
 ## Objective
 
-Convert LeadsRadar from a prototype/demo workspace into a production-ready multi-tenant web application while preserving its core product direction: authenticated lead discovery, CRM pipeline management, AI-assisted outreach, enrichment, analytics, and optional Gmail/Paystack integrations.
+Convert LeadsRadar from a prototype/demo workspace into a production-ready multi-tenant web application while preserving its core product direction: authenticated lead discovery, CRM pipeline management, AI-assisted outreach, enrichment, analytics, and optional Gmail/MoonPay integrations.
 
 Production mode must be safe by default. Demo, mock, heuristic, and sandbox behavior may remain available for local development and controlled preview environments, but it must be explicit, visibly labeled, and impossible to activate accidentally in production.
 
@@ -10,7 +10,7 @@ Production mode must be safe by default. Demo, mock, heuristic, and sandbox beha
 
 1. The existing Firebase Authentication and Firestore architecture remains the primary identity and persistence layer.
 2. The existing Express server remains the API boundary and will verify Firebase ID tokens on protected routes.
-3. Gemini, Paystack, and Gmail remain supported integrations; external credentials are supplied through environment variables or managed deployment secrets.
+3. Gemini, MoonPay, and Gmail remain supported integrations; external credentials are supplied through environment variables or managed deployment secrets.
 4. No destructive database migration or live-cloud rule deployment will be performed automatically in this task.
 5. The migration is implemented on a feature branch with atomic commits and verified locally. Deployment, credential rotation, and production rule publication remain explicit operator actions.
 6. Existing user-facing API response fields should remain backward-compatible unless retaining a field would create a security or factuality defect.
@@ -21,7 +21,7 @@ Production mode must be safe by default. Demo, mock, heuristic, and sandbox beha
 |---|---|
 | Authentication | Every protected API route rejects missing, invalid, expired, or wrong-audience Firebase ID tokens with `401`; route handlers derive identity from the verified token, never from arbitrary request `uid`. |
 | Authorization | Resource operations enforce ownership and plan permissions server-side; a user cannot read or mutate another user’s profile, leads, tokens, or queries. |
-| Payments | A successful checkout cannot grant Pro without verified provider evidence; sandbox activation is disabled in production. |
+| Payments | A successful MoonPay checkout cannot grant Pro without a verified signed webhook event, a server-created order, and a treasury-wallet match; sandbox activation is disabled in production. |
 | Secrets | No fallback encryption key exists in production; secrets and full tokens never appear in logs or client-readable documents. |
 | Validation | Every API boundary validates input and provider responses with bounded schemas; oversized or malformed payloads return structured `4xx` responses. |
 | Errors | All API failures use one stable envelope: `{ error: { code, message, requestId } }`; production responses do not expose stack traces or provider internals. |
@@ -54,7 +54,7 @@ npm test -- --runInBand tests/api.test.ts
 ```text
 server.ts                         Express composition and route registration
 src/server/                       Auth, validation, errors, logging, providers
-src/server/providers/              Gemini, Paystack, Gmail adapters
+src/server/providers/              Gemini, MoonPay, Gmail adapters
 src/lib/                          Shared browser-safe domain utilities
 src/components/                   UI components and focused workbenches
 tests/                            Unit and API regression tests
@@ -99,7 +99,7 @@ Validation errors use `422`; missing authentication uses `401`; failed ownership
 
 - Deploying rules or migrations to live Firebase.
 - Rotating, revoking, or replacing external credentials.
-- Changing Paystack product identifiers, amounts, currencies, or webhook configuration.
+- Changing MoonPay product amounts, currencies, treasury wallet, or webhook configuration.
 - Removing demo behavior entirely.
 - Introducing a queue or scheduled worker that creates paid-provider traffic.
 
@@ -116,7 +116,7 @@ Validation errors use `422`; missing authentication uses `401`; failed ownership
 
 Small unit tests cover schemas, redaction, error mapping, factuality labels, fallback transformations, CSV escaping, and subscription policy. Medium API tests use an in-memory/fake provider boundary to cover authentication, ownership, validation, rate limits, and payment state transitions without contacting live services. Firestore rules tests cover user/profile, lead, and query ownership and field restrictions. A small number of browser tests cover sign-in gating, lead update failure recovery, and the disabled production sandbox path.
 
-Tests must be deterministic, isolated, and state-based. External Gemini, Paystack, Gmail, and Firebase calls are mocked only at the provider boundary.
+Tests must be deterministic, isolated, and state-based. External Gemini, MoonPay, Gmail, and Firebase calls are mocked only at the provider boundary.
 
 ## Implementation order
 
@@ -132,6 +132,6 @@ Tests must be deterministic, isolated, and state-based. External Gemini, Paystac
 
 - Which deployment platform and domain will be used for production?
 - Should Gmail access tokens move to a dedicated server-side secret store, or is an authenticated Firestore token vault acceptable for the first production release?
-- Which Paystack webhook signing and product configuration will be used in the live account?
+- Which MoonPay webhook key, treasury wallet, product amounts, and supported currencies will be used in the live account?
 - Is the weekly updater required for the first production release, or should it remain disabled until a durable worker and notification channel exist?
 - Which observability backend should receive structured logs and metrics?
