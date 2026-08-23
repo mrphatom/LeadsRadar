@@ -81,3 +81,27 @@ FIREBASE_PROJECT_ID=your_firebase_project_id_here
    ```bash
    npm run start
    ```
+
+
+## Production deployment
+
+LeadsRadar now defaults to fail-closed production behavior. Configure `NODE_ENV=production`, an HTTPS `APP_URL`, `GEMINI_API_KEY`, `FIREBASE_SERVICE_ACCOUNT`, `ENCRYPTION_KEY` with at least 32 UTF-8 bytes, and `PAYSTACK_SECRET_KEY` for billing. Optional values include `PORT`, `ALLOWED_ORIGINS`, `PAYSTACK_CURRENCY`, and `JSON_BODY_LIMIT`. See [`docs/production-operations.md`](docs/production-operations.md) for the complete environment contract, Paystack webhook setup, credential-storage model, incident checks, and rollback procedure.
+
+All protected API calls require a verified Firebase ID token. Pro access and subscription state are server-authoritative and are never granted from browser localStorage or a client-controlled Firestore write. Gmail tokens are encrypted and stored outside the client-readable profile document. Discovery responses expose grounding citations when available; synthetic or unverified fallbacks are labeled and should not be treated as verified business data.
+
+The weekly scan planner is a manual browser-session workflow, not a persistent background scheduler. A durable scheduler requires a separately authenticated job runner and queue.
+
+## Validation
+
+Use the locked dependency and production validation workflow before release:
+
+```bash
+npm ci --ignore-scripts
+npm run lint
+npm test
+npm run build
+npm run audit
+git diff --check
+```
+
+The repository includes a GitHub Actions workflow at [`.github/workflows/ci.yml`](.github/workflows/ci.yml) that runs these quality gates on pushes and pull requests.
