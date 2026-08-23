@@ -77,6 +77,23 @@ test('creates stable public API errors without exposing internal details', () =>
 });
 
 import { requireAuth } from '../src/server/http.ts';
+import { createFirestoreUserError, getSafeFirestoreErrorContext } from '../src/utils/firestoreError.ts';
+
+test('keeps Firestore diagnostics free of direct identity and raw provider details', () => {
+  const context = getSafeFirestoreErrorContext(
+    { code: 'permission-denied', message: 'private@example.com should not be exposed' },
+    'write' as never,
+    'users/user-1',
+  );
+
+  assert.deepEqual(context, {
+    operationType: 'write',
+    path: 'users/user-1',
+    errorCode: 'permission-denied',
+  });
+  assert.equal(createFirestoreUserError().message, 'Unable to complete the requested workspace operation. Please retry.');
+  assert.equal(JSON.stringify(context).includes('private@example.com'), false);
+});
 
 test('rejects missing bearer tokens before calling the verifier', async () => {
   let verifierCalled = false;
