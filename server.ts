@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
-import crypto from "crypto";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -12,8 +11,9 @@ import { initializeApp as initAdminApp, getApps, getApp, cert } from "firebase-a
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 import { getRuntimeConfig } from "./src/server/runtimeConfig.ts";
-import { errorHandler, logEvent, requestContext, requireAuth, requirePrincipal } from "./src/server/http.ts";
+import { errorHandler, logEvent, requestContext, requireAuth, requirePrincipal, requirePro, sendApiError, validateBody } from "./src/server/http.ts";
 import { ApiError, isAllowedOrigin } from "./src/server/security.ts";
+import { createEncryptionService } from "./src/server/crypto.ts";
 import {
   chatAssistantSchema,
   checkoutSessionSchema,
@@ -408,7 +408,7 @@ function sanitizeServerLead(lead: any): any {
 }
 
 // Search leads using Google Search Grounding with strict Zero Hallucination policy & multi-platform sources
-app.post("/api/search-leads", async (req, res) => {
+app.post("/api/search-leads", validateBody(searchLeadsSchema), async (req, res) => {
   const { country, city, category, platforms } = req.body;
 
   if (!country || !city || !category) {
@@ -555,7 +555,7 @@ Structure:
 });
 
 // Deep factual enrichment & social search endpoint using Google Search Grounding
-app.post("/api/enrich-lead", async (req, res) => {
+app.post("/api/enrich-lead", validateBody(enrichLeadSchema), async (req, res) => {
   const { name, city, country, category } = req.body;
 
   if (!name || !city || !country) {
@@ -677,7 +677,7 @@ Return strictly a valid JSON object matching this schema without markdown code b
 });
 
 // --- LinkedIn Company & Employee Intelligence Endpoint ---
-app.post("/api/linkedin-intelligence", async (req, res) => {
+app.post("/api/linkedin-intelligence", requirePro(() => db), validateBody(linkedinIntelligenceSchema), async (req, res) => {
   const { companyName, city, country, category } = req.body;
   if (!companyName) {
     return res.status(400).json({ error: "companyName is required" });
@@ -759,7 +759,7 @@ IMPORTANT: Do not hallucinate private personal emails or unlisted phones. Only r
 });
 
 // --- Web Adaptability & Link Rot Monitor Endpoint ---
-app.post("/api/web-adaptability-check", async (req, res) => {
+app.post("/api/web-adaptability-check", requirePro(() => db), validateBody(webAdaptabilitySchema), async (req, res) => {
   const { leadId, name, city, country, category, websiteStatus } = req.body;
   if (!name) {
     return res.status(400).json({ error: "name is required" });
@@ -971,7 +971,7 @@ LeadsRadar`;
 }
 
 // Generate pitch package
-app.post("/api/generate-pitch", async (req, res) => {
+app.post("/api/generate-pitch", requirePro(() => db), validateBody(generatePitchSchema), async (req, res) => {
   const { lead, variant = "direct", language = "English" } = req.body;
 
   if (!lead) {
@@ -1058,16 +1058,25 @@ Return strictly a valid raw JSON object matching the following Schema. Do not in
 }
 
 // Create subscription Paystack checkout session (falls back to local sandbox in preview mode if secret missing or mismatched)
-app.post("/api/paystack/create-checkout-session", async (req, res) => {
-  const { successUrl, cancelUrl, tier, period, email } = req.body;
-  const paystackEmail = getValidPaystackEmail(email);
+app.post("/api/paystack/create-checkout-session", validateBody(checkoutSessionSchema), async (req, res) => {
+  const { period } = req.body;
+  const principal = requirePrincipal(req);
+  const paystackEmail = principal.email;
+  const successUrl = new URL('/billing-success', runtimeConfig.appUrl).toString();
+  const cancelUrl = new URL('/', runtimeConfig.appUrl).toString();
   const hasPaystackKey = !!process.env.PAYSTACK_SECRET_KEY;
 
+  if (!paystackEmail || !paystackEmail.includes('@')) {
+    return sendApiError(res, req, new ApiError(422, 'VALIDATION_ERROR', 'A verified account email is required for checkout.'));
+  }
+
   if (!hasPaystackKey) {
-    // Return custom sandbox URL for seamless testing
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Payment service is temporarily unavailable.'));
+    }
     return res.json({
       isMock: true,
-      url: `/checkout-sandbox?tier=${tier || 'pro'}&period=${period || 'month'}&success_url=${encodeURIComponent(successUrl)}&cancel_url=${encodeURIComponent(cancelUrl)}`
+      url: `/checkout-sandbox?period=${period}&success_url=${encodeURIComponent(successUrl)}&cancel_url=${encodeURIComponent(cancelUrl)}`
     });
   }
 
@@ -1119,7 +1128,7 @@ app.post("/api/paystack/create-checkout-session", async (req, res) => {
       finalAmount = period === 'year' ? 130000 : 15000; // 1,300 ZAR or 150 ZAR in cents
     }
 
-    console.log(`Initializing Paystack transaction: amount=${finalAmount}, currency=${cur}, email=${paystackEmail}`);
+    logEvent("info", "paystack_checkout_initialized", req, { amount: finalAmount, currency: cur, period });
 
     let response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
@@ -1133,9 +1142,9 @@ app.post("/api/paystack/create-checkout-session", async (req, res) => {
         currency: cur,
         callback_url: successUrl,
         metadata: {
-          tier: tier || 'pro',
-          period: period || 'month',
-          email: paystackEmail
+          tier: 'pro',
+          period,
+          uid: principal.uid
         }
       })
     });
@@ -1165,9 +1174,9 @@ app.post("/api/paystack/create-checkout-session", async (req, res) => {
             amount: fallbackAmount,
             callback_url: successUrl,
             metadata: {
-              tier: tier || 'pro',
-              period: period || 'month',
-              email: paystackEmail
+              tier: 'pro',
+              period,
+              uid: principal.uid
             }
           })
         });
@@ -1191,19 +1200,17 @@ app.post("/api/paystack/create-checkout-session", async (req, res) => {
       throw new Error(resJson.message || "Failed to retrieve checkout URL from Paystack.");
     }
   } catch (err: any) {
-    console.error("Paystack Checkout Session compilation failed, falling back to sandbox:", err);
-    // Graceful fallback to sandbox with status 200 to prevent crashing the modal loading state, but display diagnostics!
-    const sandboxUrl = `/checkout-sandbox?tier=${tier || 'pro'}&period=${period || 'month'}&success_url=${encodeURIComponent(successUrl)}&cancel_url=${encodeURIComponent(cancelUrl)}&paystack_error=${encodeURIComponent(err.message || 'unknown_error')}`;
-    res.json({ 
-      url: sandboxUrl,
-      isMock: true,
-      error: err.message
-    });
+    logEvent("error", "paystack_checkout_failed", req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Payment service is temporarily unavailable.'));
+    }
+    const sandboxUrl = `/checkout-sandbox?period=${period}&success_url=${encodeURIComponent(successUrl)}&cancel_url=${encodeURIComponent(cancelUrl)}`;
+    res.json({ url: sandboxUrl, isMock: true, warning: 'Payment service unavailable; development sandbox returned.' });
   }
 });
 
 // Pro Mode: Generate Broader SEO & SWOT Competitor Analysis
-app.post("/api/generate-analysis", async (req, res) => {
+app.post("/api/generate-analysis", requirePro(() => db), validateBody(generateAnalysisSchema), async (req, res) => {
   const { lead } = req.body;
 
   if (!lead) {
@@ -1333,7 +1340,7 @@ Strict Schema:
 });
 
 // Pro Mode: Conversational AI Lead Assistant (Chatbot)
-app.post("/api/chat-assistant", async (req, res) => {
+app.post("/api/chat-assistant", requirePro(() => db), validateBody(chatAssistantSchema), async (req, res) => {
   const { lead, messages } = req.body;
 
   if (!lead || !messages) {
@@ -1393,38 +1400,15 @@ What specific objection or pricing strategy would you like us to detail next?`;
 
 
 // --- Gmail Cryptography & API Integrations ---
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "aistudio_secure_encryption_key_32bytes"; // Fallback identifier
-const IV_LENGTH = 16;
+const encryptionService = createEncryptionService(
+  runtimeConfig.encryptionKey || (runtimeConfig.isProduction ? undefined : 'development-only-leadsradar-key-32-bytes'),
+);
 
-function encrypt(text: string): string {
-  const key = Buffer.alloc(32);
-  Buffer.from(ENCRYPTION_KEY).copy(key);
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
-  let encrypted = cipher.update(text);
-  encrypted = Buffer.concat([encrypted, cipher.final()]);
-  return iv.toString("hex") + ":" + encrypted.toString("hex");
-}
-
-function decrypt(text: string): string {
-  const key = Buffer.alloc(32);
-  Buffer.from(ENCRYPTION_KEY).copy(key);
-  const parts = text.split(":");
-  const iv = Buffer.from(parts.shift() || "", "hex");
-  const encryptedText = Buffer.from(parts.join(":"), "hex");
-  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
-  let decrypted = decipher.update(encryptedText);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString();
-}
-
-app.post("/api/gmail/connect", async (req, res) => {
-  const { uid, email, token } = req.body;
-  if (!uid || !token) {
-    return res.status(400).json({ error: "UID and token are required." });
-  }
+app.post("/api/gmail/connect", requirePro(() => db), validateBody(gmailConnectSchema), async (req, res) => {
+  const { email, token } = req.body;
+  const uid = requirePrincipal(req).uid;
   try {
-    const encryptedToken = encrypt(token);
+    const encryptedToken = encryptionService.encrypt(token);
     // Save to Firestore users collection
     if (db) {
       await db.collection("users").doc(uid).set({
@@ -1432,20 +1416,18 @@ app.post("/api/gmail/connect", async (req, res) => {
         gmailConnected: true,
         gmailEmail: email || null
       }, { merge: true });
-      console.log(`Saved encrypted Gmail token for user: ${uid}`);
+      logEvent("info", "gmail_credentials_stored", req, { provider: "gmail" });
     }
-    res.json({ success: true, encryptedToken });
+    res.json({ success: true });
   } catch (err: any) {
-    console.error("Connect Gmail API error:", err);
-    res.status(500).json({ error: err.message });
+    logEvent("error", "gmail_connect_failed", req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Gmail connection could not be secured.'));
   }
 });
 
-app.post("/api/gmail/send", async (req, res) => {
-  const { uid, to, subject, body } = req.body;
-  if (!uid || !to || !subject || !body) {
-    return res.status(400).json({ error: "Missing required params: uid, to, subject, body." });
-  }
+app.post("/api/gmail/send", requirePro(() => db), validateBody(gmailSendSchema), async (req, res) => {
+  const { to, subject, body } = req.body;
+  const uid = requirePrincipal(req).uid;
   try {
     if (!db) {
       throw new Error("Firestore server is not configured.");
@@ -1460,7 +1442,7 @@ app.post("/api/gmail/send", async (req, res) => {
     }
     
     // Decrypt token
-    const decryptedToken = decrypt(data.encryptedGmailToken);
+    const decryptedToken = encryptionService.decrypt(data.encryptedGmailToken);
     
     // Build RFC 822 email format
     const emailMsg = [
@@ -1507,11 +1489,9 @@ app.post("/api/gmail/send", async (req, res) => {
   }
 });
 
-app.post("/api/gmail/check-replies", async (req, res) => {
-  const { uid, leadEmail } = req.body;
-  if (!uid || !leadEmail) {
-    return res.status(400).json({ error: "Missing required params: uid, leadEmail." });
-  }
+app.post("/api/gmail/check-replies", requirePro(() => db), validateBody(gmailReplyCheckSchema), async (req, res) => {
+  const { leadEmail } = req.body;
+  const uid = requirePrincipal(req).uid;
   try {
     if (!db) {
       throw new Error("Firestore server is not configured.");
@@ -1550,7 +1530,7 @@ Write only the email body response, and keep it friendly and short.`;
       return res.json({ hasReply: false });
     }
     
-    const decryptedToken = decrypt(data.encryptedGmailToken);
+    const decryptedToken = encryptionService.decrypt(data.encryptedGmailToken);
     
     // Fetch threads or messages with search constraint from lead
     const listResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=from:${leadEmail}`, {

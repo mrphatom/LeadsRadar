@@ -44,7 +44,7 @@ export const aiLeadSchema = z.object({
   websiteStatus: z.string().trim().max(500).optional(),
   notes: z.string().trim().max(3000).optional(),
   status: z.enum(['new', 'contacted', 'proposal', 'negotiating', 'won', 'rejected']).optional(),
-}).strict();
+});
 
 export const generatePitchSchema = z.object({
   lead: aiLeadSchema,

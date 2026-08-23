@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import type { ZodType } from 'zod';
 import {
   ApiError,
   createRequestId,
@@ -56,6 +57,41 @@ export function requireAuth(
         return sendApiError(res, req, error);
       }
       return sendApiError(res, req, new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired authentication token.'));
+    }
+  };
+}
+
+export function validateBody<T>(schema: ZodType<T>): RequestHandler {
+  return (req, res, next) => {
+    const result = schema.safeParse(req.body);
+    if (!result.success) {
+      return sendApiError(res, req, new ApiError(422, 'VALIDATION_ERROR', 'Request body is invalid.', result.error.message));
+    }
+    req.body = result.data;
+    next();
+  };
+}
+
+export function requirePro(getDb: () => any): RequestHandler {
+  return async (req, res, next) => {
+    const principal = req.principal;
+    if (!principal) {
+      return sendApiError(res, req, new ApiError(401, 'UNAUTHORIZED', 'Authentication required.'));
+    }
+    const db = getDb();
+    if (!db) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Subscription service is temporarily unavailable.'));
+    }
+
+    try {
+      const userSnapshot = await db.collection('users').doc(principal.uid).get();
+      if (userSnapshot.data()?.subscriptionTier !== 'pro') {
+        return sendApiError(res, req, new ApiError(403, 'FORBIDDEN', 'A Pro subscription is required for this feature.'));
+      }
+      next();
+    } catch (error) {
+      logEvent('error', 'subscription_authorization_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+      sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Subscription service is temporarily unavailable.'));
     }
   };
 }
