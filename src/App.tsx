@@ -19,6 +19,7 @@ import { AuthView } from './components/AuthView';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { apiFetch } from './apiClient';
 import { isDisplayableLead, sanitizeLeadArray, sanitizeLeadContact } from './utils/leadSanitizer';
+import { isProSubscriptionActive } from './utils/subscription';
 // @ts-ignore
 import brandLogo from './assets/images/logo_1779885424761.png';
 import { 
@@ -39,12 +40,25 @@ function AppContent() {
   const [pastQueries, setPastQueries] = useState<any[]>([]);
   const [syncing, setSyncing] = useState<boolean>(true);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
 
   const reportPersistenceError = (message: string) => {
     setPersistenceError(message);
   };
   
-  const [config, setConfig] = useState<{ discoveryProvider: string; discoveryAvailable: boolean; guidanceAvailable: boolean; message: string }>({ discoveryProvider: 'google-places-api', discoveryAvailable: false, guidanceAvailable: false, message: '' });
+  const [config, setConfig] = useState<{
+    discoveryProvider: string;
+    discoveryAvailable: boolean;
+    guidanceAvailable: boolean;
+    billingAvailable: boolean;
+    message: string;
+  }>({
+    discoveryProvider: 'google-places-api',
+    discoveryAvailable: false,
+    guidanceAvailable: false,
+    billingAvailable: false,
+    message: '',
+  });
   
   // Subscription management states
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
@@ -83,7 +97,13 @@ function AppContent() {
   useEffect(() => {
     apiFetch('/api/config')
       .then(res => res.json())
-      .then(data => setConfig(data))
+      .then(data => setConfig({
+        discoveryProvider: data?.discoveryProvider || 'google-places-api',
+        discoveryAvailable: data?.discoveryAvailable === true,
+        guidanceAvailable: data?.guidanceAvailable === true,
+        billingAvailable: data?.billingAvailable === true,
+        message: typeof data?.message === 'string' ? data.message : '',
+      }))
       .catch(err => console.error("Error connecting to Express backend API config:", err));
   }, []);
 
@@ -212,9 +232,9 @@ function AppContent() {
   // Persist provider discoveries as client-provided records; server authority is not forged in the browser
   const handleLeadsDiscovered = async (newLeads: BusinessLead[], source: string) => {
     if (!user) return;
-    const searchCheck = checkGuestSearchLimit();
+    const searchCheck = user.isAnonymous ? checkGuestSearchLimit() : { allowed: true };
     if (!searchCheck.allowed) {
-      alert("Guest Mode Discovery Limit Reached (5/5 searches). Open 'Security & Guest' in the navigation bar to switch to Pro Authenticated Mode for unlimited access!");
+      setWorkspaceNotice('Anonymous search limit reached for this browser session. Sign in with a personal account to use the server-managed workspace.');
       setIsSecurityModalOpen(true);
       return;
     }
@@ -278,9 +298,9 @@ function AppContent() {
   // Manual record enrollment dispatch
   const handleAddManualLead = async (newLead: BusinessLead) => {
     if (!user) return;
-    const saveCheck = checkGuestSaveLimit();
+    const saveCheck = user.isAnonymous ? checkGuestSaveLimit() : { allowed: true };
     if (!saveCheck.allowed) {
-      alert("Guest Mode Save Limit Reached (15/15 leads saved). Open 'Security & Guest' in the navigation bar to switch to Pro Authenticated Mode for unlimited capacity!");
+      setWorkspaceNotice('Anonymous save limit reached for this browser session. Sign in with a personal account to use the server-managed workspace.');
       setIsSecurityModalOpen(true);
       return;
     }
@@ -600,21 +620,25 @@ function AppContent() {
     return <AuthView />;
   }
 
-  const isPro = profile?.subscriptionTier === 'pro';
+  const isPro = isProSubscriptionActive(profile);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-300 transition-all selection:bg-orange-500/10 selection:text-orange-400 leading-normal font-sans">
-      {persistenceError && (
-        <div role="alert" className="fixed inset-x-0 top-0 z-[100] bg-rose-950/95 border-b border-rose-500/40 text-rose-100 px-4 py-2 text-xs text-center">
-          {persistenceError}
-          <button type="button" className="ml-3 underline hover:no-underline" onClick={() => setPersistenceError(null)}>
+    <div className="min-h-screen bg-zinc-950 text-zinc-300 transition-colors selection:bg-orange-500/10 selection:text-orange-400 leading-normal font-sans">
+      {(persistenceError || workspaceNotice) && (
+        <div role="alert" className={`fixed inset-x-0 top-0 z-[100] border-b px-4 py-2 text-xs text-center ${persistenceError ? 'bg-rose-950/95 border-rose-500/40 text-rose-100' : 'bg-amber-950/95 border-amber-500/40 text-amber-100'}`}>
+          {persistenceError || workspaceNotice}
+          <button
+            type="button"
+            className="ml-3 underline hover:no-underline focus-visible:outline"
+            onClick={() => { setPersistenceError(null); setWorkspaceNotice(null); }}
+          >
             Dismiss
           </button>
         </div>
       )}
       
       {/* Sleek Minimalist Sticky Navbar */}
-      <header className="bg-zinc-950/80 backdrop-blur-md border-b border-zinc-900 sticky top-0 z-50 transition-all">
+      <header className="glass-panel sticky top-0 z-50 border-x-0 border-t-0 rounded-none transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="h-14 flex items-center justify-between gap-6">
             
@@ -786,7 +810,7 @@ function AppContent() {
           <div className="space-y-6">
             
             {/* Pipeline Filtering Controls */}
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="glass-panel glass-interactive rounded-3xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
               
               {/* Text Search field */}
               <div className="relative w-full md:max-w-xs">
@@ -962,7 +986,7 @@ function AppContent() {
 
             {/* RESULTS BLOCKS GRID */}
             {syncing && filteredLeads.length === 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fadeIn">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 xl:gap-6 animate-fadeIn">
                 {[...Array(6)].map((_, index) => (
                   <LeadCardSkeleton key={index} />
                 ))}
@@ -978,7 +1002,7 @@ function AppContent() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fadeIn">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 xl:gap-6 animate-fadeIn">
                 {filteredLeads.map(lead => (
                   <LeadCard
                     key={lead.id}
@@ -1015,6 +1039,7 @@ function AppContent() {
       <SubscriptionModal 
         isOpen={isSubscriptionModalOpen}
         onClose={() => setIsSubscriptionModalOpen(false)}
+        billingAvailable={config.billingAvailable}
       />
       </Suspense>
 
@@ -1033,6 +1058,7 @@ function AppContent() {
       <SecurityAuditModal
         isOpen={isSecurityModalOpen}
         onClose={() => setIsSecurityModalOpen(false)}
+        isAnonymous={user.isAnonymous}
       />
       </Suspense>
 

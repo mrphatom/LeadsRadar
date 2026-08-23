@@ -16,6 +16,7 @@ import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { apiFetch } from '../apiClient';
 import { setGuestSession } from '../services/guestAuditService';
+import { isProSubscriptionActive } from '../utils/subscription';
 
 export interface UserProfile {
   uid: string;
@@ -121,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            const resolvedTier = data.subscriptionTier === 'pro' ? 'pro' : 'free';
+            const resolvedTier = isProSubscriptionActive(data) ? 'pro' : 'free';
             setProfile({
               uid: data.uid,
               email: data.email,

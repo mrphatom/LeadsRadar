@@ -10,6 +10,7 @@ import { useAuth } from './AuthProvider';
 import DeepWebAuditModal from './DeepWebAuditModal';
 import { sanitizeLeadContact } from '../utils/leadSanitizer';
 import { apiFetch } from '../apiClient';
+import { isProSubscriptionActive } from '../utils/subscription';
 
 
 interface LeadDetailsModalProps {
@@ -22,7 +23,7 @@ interface LeadDetailsModalProps {
 export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgradeClick }: LeadDetailsModalProps) {
   const sanitizedLead = sanitizeLeadContact(lead);
   const { user, profile } = useAuth();
-  const isPro = profile?.subscriptionTier === 'pro';
+  const isPro = isProSubscriptionActive(profile);
 
   // State variables for direct email sending, tracking, and suggestions
   const [directMailSending, setDirectMailSending] = useState(false);

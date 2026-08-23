@@ -3,20 +3,22 @@ import { X, CheckCircle2, Sparkles, Loader2, ArrowRightLeft, ShieldCheck, Zap, M
 import { useAuth } from './AuthProvider';
 import { apiFetch } from '../apiClient';
 import { loadMoonPay, type MoonPayWebSdk } from '@moonpay/moonpay-js';
+import { isProSubscriptionActive } from '../utils/subscription';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  billingAvailable: boolean;
 }
 
-export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModalProps) {
+export default function SubscriptionModal({ isOpen, onClose, billingAvailable }: SubscriptionModalProps) {
   const { 
     user, 
     profile, 
     connectGmail, 
     disconnectGmail
   } = useAuth();
-  const isPro = profile?.subscriptionTier === 'pro';
+  const isPro = isProSubscriptionActive(profile);
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year'>('month');
   const [moonPayWidget, setMoonPayWidget] = useState<MoonPayWebSdk | null>(null);
   const [loading, setLoading] = useState(false);
@@ -41,6 +43,11 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
   if (!isOpen) return null;
 
   const handleCheckout = async () => {
+    if (!billingAvailable) {
+      setError('MoonPay upgrades are temporarily unavailable because billing is not configured on the server. No payment was started.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -310,8 +317,9 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
               <button
                 type="button"
                 onClick={handleCheckout}
-                disabled={loading}
-                className="w-full bg-zinc-100 hover:bg-white text-zinc-950 font-extrabold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
+                disabled={loading || !billingAvailable}
+                aria-describedby="moonpay-availability-note"
+                className="w-full bg-zinc-100 hover:bg-white disabled:bg-zinc-700 disabled:text-zinc-400 disabled:cursor-not-allowed text-zinc-950 font-extrabold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
               >
                 {loading ? (
                   <>
@@ -324,9 +332,11 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 )}
               </button>
               
-              <div className="text-center">
+              <div id="moonpay-availability-note" className="text-center" role="status" aria-live="polite">
                 <span className="text-[10px] text-zinc-500 leading-normal block">
-                  MoonPay will open a secure on-ramp for the selected plan. Pro access activates only after the server confirms a completed transaction for your account.
+                  {billingAvailable
+                    ? 'MoonPay will open a secure on-ramp for the selected plan. Pro access activates only after the server confirms a completed transaction for your account.'
+                    : 'MoonPay checkout is unavailable until the server billing configuration is complete. No payment can be started from this screen.'}
                 </span>
               </div>
 

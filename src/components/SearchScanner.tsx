@@ -8,6 +8,7 @@ import { CountryType, BusinessLead } from '../types';
 import { apiFetch } from '../apiClient';
 import { useAuth } from './AuthProvider';
 import SearchHistoryModal from './SearchHistoryModal';
+import { isProSubscriptionActive } from '../utils/subscription';
 
 interface SearchScannerProps {
   onLeadsDiscovered: (newLeads: BusinessLead[], source: string, citations?: any[]) => void;
@@ -46,14 +47,12 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
   const { profile } = useAuth();
   const [scannerTab, setScannerTab] = useState<'scan' | 'updater'>('scan');
   
-  const isPro = profile?.subscriptionTier === 'pro';
+  const isPro = isProSubscriptionActive(profile);
   const schedulerStorageKey = profile?.uid || 'anonymous';
-  const maxQueries = isPro ? 20 : 10;
 
   // Compute total scans performed on current calendar day (UTC)
   const todayStr = new Date().toISOString().split('T')[0];
   const queriesTodayCount = pastQueries.filter(q => q.timestamp && q.timestamp.split('T')[0] === todayStr).length;
-  const limitReached = queriesTodayCount >= maxQueries;
 
   // Standard Scan block states
   const [country, setCountry] = useState<CountryType>('USA');
@@ -102,6 +101,12 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
     setError(null);
     setSuccessCount(null);
     setScanSource(null);
+
+    if (!discoveryAvailable) {
+      setError('Real lead discovery is unavailable because the server-side Google Places provider is not configured. No synthetic results are shown.');
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await apiFetch('/api/search-leads', {
@@ -162,13 +167,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
       return;
     }
 
-    // Enforce subscription limits
-    if (limitReached) {
-      setError(`Daily scan limit reached! Free users are capped at 10 searches per day, while Pro packages support up to 20 daily scans.`);
-      setLoading(false);
-      return;
-    }
-    
+    // The server enforces the real daily quota. Browser history is informational only.
     const finalCategory = category === 'Custom' ? customCategory : category;
     if (!finalCategory.trim()) {
       setError('Please provide a business niche/category.');
@@ -348,9 +347,9 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
 
           <div className="bg-zinc-950 px-3.5 py-2 rounded-xl border border-zinc-800 flex items-center gap-3">
             <div className="flex flex-col">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Daily Scanner Quota</span>
+              <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Provider Usage</span>
               <span className="text-xs text-zinc-300 font-bold">
-                {queriesTodayCount} <span className="text-zinc-500 font-normal">/ {maxQueries} queries run</span>
+                {queriesTodayCount} <span className="text-zinc-500 font-normal">browser history entries today</span>
               </span>
             </div>
             {!isPro ? (
@@ -370,9 +369,10 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
         </div>
         
         {/* TAB CONTROLLERS */}
-        <div className="flex bg-zinc-950 border border-zinc-900 p-1 rounded-xl shrink-0 self-start lg:self-center">
+        <div className="flex bg-zinc-950 border border-zinc-900 p-1 rounded-xl shrink-0 self-start lg:self-center" role="group" aria-label="Discovery workflow">
           <button
             type="button"
+            aria-pressed={scannerTab === 'scan'}
             onClick={() => setScannerTab('scan')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
               scannerTab === 'scan'
@@ -384,6 +384,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
           </button>
           <button
             type="button"
+            aria-pressed={scannerTab === 'updater'}
             onClick={() => setScannerTab('updater')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
               scannerTab === 'updater'
@@ -403,11 +404,12 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Country Selection */}
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <label htmlFor="target-country" className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Globe className="h-3.5 w-3.5 text-zinc-500" /> Target Country
               </label>
               <div className="grid grid-cols-1 gap-2">
                 <select
+                  id="target-country"
                   value={['USA', 'UK', 'Germany', 'Canada'].includes(country) ? country : 'Custom'}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -433,6 +435,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
 
                 {(!['USA', 'UK', 'Germany', 'Canada'].includes(country) || country === 'Custom') && (
                   <input
+                    id="custom-country"
                     type="text"
                     value={customCountry || (country !== 'Custom' ? country : '')}
                     onChange={(e) => {
@@ -449,11 +452,12 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
 
             {/* City Coordinate */}
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <label htmlFor="target-city" className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <MapPin className="h-3.5 w-3.5 text-zinc-500" /> City / Region
               </label>
               <div className="relative">
                 <input
+                  id="target-city"
                   type="text"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
@@ -486,11 +490,12 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
 
             {/* Business Niches */}
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <label htmlFor="business-category" className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Building2 className="h-3.5 w-3.5 text-zinc-500" /> Business Category
               </label>
               <div className="grid grid-cols-1 gap-2">
                 <select
+                  id="business-category"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                   className="w-full text-sm py-2 px-3 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-300 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium"
@@ -505,6 +510,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
 
                 {category === 'Custom' && (
                   <input
+                    id="custom-category"
                     type="text"
                     value={customCategory}
                     onChange={(e) => setCustomCategory(e.target.value)}
