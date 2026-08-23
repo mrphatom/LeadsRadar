@@ -60,6 +60,17 @@ export const AuthView: React.FC = () => {
     }
   };
 
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const nextRegister = event.key === 'ArrowRight';
+    setIsRegister(nextRegister);
+    setError(null);
+    window.requestAnimationFrame(() => {
+      document.getElementById(nextRegister ? 'register-tab' : 'sign-in-tab')?.focus();
+    });
+  };
+
   const handleGuestAuth = async () => {
     setLoading(true);
     setError(null);
@@ -73,7 +84,7 @@ export const AuthView: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-center items-center p-4">
+    <main className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-center items-center p-4 sm:p-6">
       {/* Visual background accents */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-zinc-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -97,21 +108,31 @@ export const AuthView: React.FC = () => {
         </div>
 
         {/* Authentication Card */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl space-y-6">
-          <div className="flex border-b border-zinc-800 pb-4">
+        <div className="glass-panel rounded-3xl p-5 sm:p-8 shadow-2xl space-y-6">
+          <div className="flex border-b border-zinc-800 pb-4" role="tablist" aria-label="Authentication method">
             <button
               type="button"
+              id="sign-in-tab"
+              role="tab"
               aria-selected={!isRegister}
+              aria-controls="sign-in-panel"
+              tabIndex={!isRegister ? 0 : -1}
+              onKeyDown={handleTabKeyDown}
               onClick={() => { setIsRegister(false); setError(null); }}
-              className={`flex-1 text-center py-2 text-xs font-bold tracking-wider uppercase transition-colors ${!isRegister ? 'text-orange-500 border-b-2 border-orange-500 -mb-[18px]' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`glass-interactive flex-1 text-center py-2 text-xs font-bold tracking-wider uppercase transition-colors ${!isRegister ? 'text-orange-500 border-b-2 border-orange-500 -mb-[18px]' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
               Sign In
             </button>
             <button
               type="button"
+              id="register-tab"
+              role="tab"
               aria-selected={isRegister}
+              aria-controls="register-panel"
+              tabIndex={isRegister ? 0 : -1}
+              onKeyDown={handleTabKeyDown}
               onClick={() => { setIsRegister(true); setError(null); }}
-              className={`flex-1 text-center py-2 text-xs font-bold tracking-wider uppercase transition-colors ${isRegister ? 'text-orange-500 border-b-2 border-orange-500 -mb-[18px]' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`glass-interactive flex-1 text-center py-2 text-xs font-bold tracking-wider uppercase transition-colors ${isRegister ? 'text-orange-500 border-b-2 border-orange-500 -mb-[18px]' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
               Register
             </button>
@@ -127,14 +148,22 @@ export const AuthView: React.FC = () => {
             </div>
           )}
 
+          <section
+            id={isRegister ? 'register-panel' : 'sign-in-panel'}
+            role="tabpanel"
+            aria-labelledby={isRegister ? 'register-tab' : 'sign-in-tab'}
+            tabIndex={-1}
+          >
           <form onSubmit={handleEmailAuth} className="space-y-4">
             {isRegister && (
               <div>
-                <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <label htmlFor="full-name" className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <User className="h-3.5 w-3.5 text-zinc-500" /> Full Name
                 </label>
                 <input
+                  id="full-name"
                   type="text"
+                  autoComplete="name"
                   placeholder="e.g. Rachel Green"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -145,11 +174,13 @@ export const AuthView: React.FC = () => {
             )}
 
             <div>
-              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <label htmlFor="email-address" className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Mail className="h-3.5 w-3.5 text-zinc-500" /> Email Address
               </label>
               <input
+                id="email-address"
                 type="email"
+                autoComplete="email"
                 placeholder="you@domain.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -159,12 +190,14 @@ export const AuthView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <label htmlFor="password" className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Lock className="h-3.5 w-3.5 text-zinc-500" /> Password
               </label>
               <div className="relative">
                 <input
+                  id="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete={isRegister ? 'new-password' : 'current-password'}
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -174,8 +207,9 @@ export const AuthView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 focus:outline-hidden"
-                  title={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
@@ -191,6 +225,7 @@ export const AuthView: React.FC = () => {
               {!loading && <ArrowRight className="h-3.5 w-3.5" />}
             </button>
           </form>
+          </section>
 
           {/* Separation indicator */}
           <div className="flex items-center gap-3">
@@ -201,6 +236,7 @@ export const AuthView: React.FC = () => {
 
           {/* Social Google Login Button */}
           <button
+            type="button"
             onClick={handleGoogleAuth}
             disabled={loading}
             className="w-full py-2.5 rounded-lg border border-zinc-800 hover:bg-zinc-800 bg-zinc-950 hover:border-zinc-700 text-xs font-semibold text-zinc-300 flex items-center justify-center gap-2 cursor-pointer transition-colors"
@@ -237,6 +273,6 @@ export const AuthView: React.FC = () => {
 
         </div>
       </div>
-    </div>
+    </main>
   );
 };

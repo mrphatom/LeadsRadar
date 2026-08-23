@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, CheckCircle2, Sparkles, Loader2, ArrowRightLeft, ShieldCheck, Zap, Mail, Check, AlertCircle, Link } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { apiFetch } from '../apiClient';
@@ -25,6 +25,8 @@ export default function SubscriptionModal({ isOpen, onClose, billingAvailable }:
   const [error, setError] = useState<string | null>(null);
 
   const [gmailConnecting, setGmailConnecting] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // Lock background body scroll to eliminate jitter
   useEffect(() => {
@@ -35,6 +37,40 @@ export default function SubscriptionModal({ isOpen, onClose, billingAvailable }:
       document.body.style.overflow = originalStyle;
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [isOpen, onClose]);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !dialogRef.current) return;
+    const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
+    ));
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   useEffect(() => () => {
     moonPayWidget?.close();
@@ -84,8 +120,8 @@ export default function SubscriptionModal({ isOpen, onClose, billingAvailable }:
       setMoonPayWidget(widget);
       widget.show();
     } catch (err: any) {
-      console.error('MoonPay checkout initialization failed:', err);
-      setError(err.message || 'Unable to reach MoonPay. Please try again.');
+      console.warn('MoonPay checkout initialization failed:', err instanceof Error ? err.name : 'UnknownError');
+      setError(err instanceof Error ? err.message : 'Unable to reach MoonPay. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -94,11 +130,14 @@ export default function SubscriptionModal({ isOpen, onClose, billingAvailable }:
   return (
     <div className="fixed inset-0 bg-zinc-950/95 flex items-center justify-center p-3 sm:p-4 z-55 overflow-y-auto w-full" role="presentation">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="subscription-modal-title"
+        onKeyDown={handleDialogKeyDown}
         className="relative w-full max-w-xl bg-zinc-900 border border-zinc-800 rounded-2xl sm:rounded-3xl p-5 sm:p-6 md:p-8 shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto"
       >
+        <h2 id="subscription-modal-title" className="sr-only">{isPro ? 'Subscription and integrations' : 'Upgrade to LeadsRadar Premium'}</h2>
         
         {/* Decorative corner glows */}
         <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500/15 rounded-full blur-2xl pointer-events-none" />
@@ -109,9 +148,11 @@ export default function SubscriptionModal({ isOpen, onClose, billingAvailable }:
           <div className="flex items-center gap-1.5 font-bold text-orange-400 text-xs uppercase tracking-wider font-mono">
             <Sparkles className="h-4 w-4 text-orange-500" /> Upgrade to LeadsRadar Premium
           </div>
-          <button
+                      <button
+            ref={closeButtonRef}
             type="button"
             aria-label="Close subscription dialog"
+
             onClick={onClose}
             className="text-zinc-500 hover:text-white p-1 rounded-lg bg-zinc-950/40 hover:bg-zinc-950 transition-all cursor-pointer border border-zinc-800"
           >
@@ -190,7 +231,7 @@ export default function SubscriptionModal({ isOpen, onClose, billingAvailable }:
                         try {
                           await connectGmail();
                         } catch (err: any) {
-                          alert(err.message || "Failed to retrieve Google authorizations.");
+                          setError(err instanceof Error ? err.message : "Failed to retrieve Google authorizations.");
                         } finally {
                           setGmailConnecting(false);
                         }
@@ -233,9 +274,9 @@ export default function SubscriptionModal({ isOpen, onClose, billingAvailable }:
         ) : (
           <div className="space-y-6">
             <div className="text-center md:text-left">
-              <h2 id="subscription-modal-title" className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
+              <h3 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
                 Unlock LeadsRadar Pro
-              </h2>
+              </h3>
               <p className="text-xs text-zinc-400 mt-1">
                 Use provider-backed records and optional Gemini-generated planning guidance; the system does not invent business facts or promise outcomes.
               </p>
@@ -307,12 +348,12 @@ export default function SubscriptionModal({ isOpen, onClose, billingAvailable }:
 
             {error && (
               <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-400 p-3.5 rounded-xl text-xs flex items-start gap-2">
-                <span className="font-extrabold shrink-0">⚠️ Error: </span>
+                <span className="font-extrabold shrink-0">Error: </span>
                 <span>{error}</span>
               </div>
             )}
 
-            {/* Trial & purchase Trigger action */}
+            {/* Purchase trigger action */}
             <div className="space-y-3">
               <button
                 type="button"
