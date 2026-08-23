@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 export type ApiErrorCode =
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
+  | 'PAYMENT_REQUIRED'
   | 'VALIDATION_ERROR'
   | 'NOT_FOUND'
   | 'CONFLICT'

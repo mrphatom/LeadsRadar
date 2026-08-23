@@ -1,13 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // 1. Global Safety Net
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- Helper Functions ---
     function isSignedIn() {
       return request.auth != null;
     }
@@ -16,9 +13,8 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == ownerId;
     }
 
-    // Verify user ID syntax and boundaries
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
     function incoming() {
@@ -29,40 +25,72 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // --- User Profiles ---
+    function hasOnlyKeys(data, allowed) {
+      return data.keys().hasOnly(allowed);
+    }
+
+    // User profiles are private tenant records. Client writes may update profile
+    // presentation and integration status only; subscription and token fields are
+    // server-authoritative and are written through the Admin SDK.
     match /users/{userId} {
-      allow get: if isSignedIn();
-      allow create, update: if isOwner(userId) && isValidUser(incoming());
+      allow get: if isOwner(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId)
+        && isValidUser(incoming())
+        && incoming().subscriptionTier == 'free'
+        && incoming().subscriptionPeriod == 'none'
+        && incoming().subscriptionId == ''
+        && !('encryptedGmailToken' in incoming())
+        && !('encryptedOutlookToken' in incoming());
+
+      allow update: if isOwner(userId)
+        && isValidUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'photoURL', 'gmailConnected', 'gmailEmail',
+          'outlookConnected', 'outlookEmail'
+        ]);
+
       allow delete: if false;
     }
 
     function isValidUser(user) {
-      return user.keys().hasAll(['uid', 'email'])
+      return hasOnlyKeys(user, [
+          'uid', 'email', 'displayName', 'photoURL', 'subscriptionTier',
+          'subscriptionPeriod', 'subscriptionId', 'trialExpires', 'createdAt',
+          'gmailConnected', 'gmailEmail', 'outlookConnected', 'outlookEmail',
+          'encryptedGmailToken', 'encryptedOutlookToken', 'lastPaymentReference',
+          'subscriptionSource', 'updatedAt'
+        ])
+        && user.keys().hasAll(['uid', 'email'])
         && user.uid == request.auth.uid
         && user.email is string
-        && user.email.size() <= 256
+        && user.email.size() <= 320
         && (!('displayName' in user) || (user.displayName is string && user.displayName.size() <= 128))
         && (!('photoURL' in user) || (user.photoURL is string && user.photoURL.size() <= 512))
-        && (!('subscriptionTier' in user) || (user.subscriptionTier is string && user.subscriptionTier.size() <= 32))
-        && (!('subscriptionPeriod' in user) || (user.subscriptionPeriod is string && user.subscriptionPeriod.size() <= 32))
-        && (!('subscriptionId' in user) || (user.subscriptionId is string && user.subscriptionId.size() <= 128))
+        && (!('subscriptionTier' in user) || user.subscriptionTier in ['free', 'pro'])
+        && (!('subscriptionPeriod' in user) || user.subscriptionPeriod in ['month', 'year', 'none'])
+        && (!('subscriptionId' in user) || (user.subscriptionId is string && user.subscriptionId.size() <= 200))
         && (!('trialExpires' in user) || (user.trialExpires is string && user.trialExpires.size() <= 128))
         && (!('createdAt' in user) || (user.createdAt is string && user.createdAt.size() <= 128))
-        && (!('gmailConnected' in user) || (user.gmailConnected is bool))
-        && (!('gmailEmail' in user) || (user.gmailEmail is string && user.gmailEmail.size() <= 256))
-        && (!('encryptedGmailToken' in user) || (user.encryptedGmailToken is string && user.encryptedGmailToken.size() <= 2048))
-        && (!('outlookConnected' in user) || (user.outlookConnected is bool))
-        && (!('outlookEmail' in user) || (user.outlookEmail is string && user.outlookEmail.size() <= 256))
-        && (!('encryptedOutlookToken' in user) || (user.encryptedOutlookToken is string && user.encryptedOutlookToken.size() <= 2048));
+        && (!('gmailConnected' in user) || user.gmailConnected is bool)
+        && (!('gmailEmail' in user) || (user.gmailEmail is string && user.gmailEmail.size() <= 320))
+        && (!('encryptedGmailToken' in user) || (user.encryptedGmailToken is string && user.encryptedGmailToken.size() <= 4096))
+        && (!('outlookConnected' in user) || user.outlookConnected is bool)
+        && (!('outlookEmail' in user) || (user.outlookEmail is string && user.outlookEmail.size() <= 320))
+        && (!('encryptedOutlookToken' in user) || (user.encryptedOutlookToken is string && user.encryptedOutlookToken.size() <= 4096))
+        && (!('lastPaymentReference' in user) || (user.lastPaymentReference is string && user.lastPaymentReference.size() <= 200))
+        && (!('subscriptionSource' in user) || (user.subscriptionSource is string && user.subscriptionSource.size() <= 64))
+        && (!('updatedAt' in user) || (user.updatedAt is string && user.updatedAt.size() <= 128));
     }
 
-    // --- Business Leads ---
     match /leads/{leadId} {
-      // Allow access if user is verified owner of this B2B lead
       allow get: if isSignedIn() && isOwner(existing().ownerId);
-      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-      
-      allow create: if isSignedIn() 
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      allow create: if isSignedIn()
         && isValidId(leadId)
         && isValidLead(incoming())
         && isOwner(incoming().ownerId);
@@ -71,64 +99,90 @@ service cloud.firestore {
         && isOwner(existing().ownerId)
         && isValidLead(incoming())
         && incoming().ownerId == existing().ownerId
-        && (
-          // Action list allowable
-          incoming().diff(existing()).affectedKeys().hasOnly([
-            'status', 'notes', 'outreachScript', 'outreachScriptSource', 'activityLog', 'emailSent', 'tags', 'analysis'
-          ])
-        );
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'emailSent', 'country', 'city', 'address', 'category', 'phone',
+          'email', 'linkedin', 'socials', 'websiteStatus', 'verified',
+          'verificationSummary', 'sourcePlatform', 'verificationScore', 'status',
+          'notes', 'linkedinIntelligence', 'webAdaptability', 'outreachScript',
+          'outreachScriptSource', 'activityLog', 'tags', 'analysis'
+        ]);
 
       allow delete: if isSignedIn() && isOwner(existing().ownerId);
     }
 
     function isValidLead(lead) {
-      return lead.keys().hasAll(['id', 'ownerId', 'name', 'country', 'city', 'category', 'phone', 'email', 'status', 'createdAt'])
-        && lead.id is string
-        && lead.id.size() <= 128
+      return hasOnlyKeys(lead, [
+          'id', 'ownerId', 'name', 'emailSent', 'country', 'city', 'address',
+          'category', 'phone', 'email', 'linkedin', 'socials', 'websiteStatus',
+          'verified', 'verificationSummary', 'sourcePlatform', 'verificationScore',
+          'status', 'notes', 'linkedinIntelligence', 'webAdaptability',
+          'outreachScript', 'outreachScriptSource', 'createdAt', 'activityLog',
+          'tags', 'analysis'
+        ])
+        && lead.keys().hasAll([
+          'id', 'ownerId', 'name', 'country', 'city', 'category', 'phone', 'email',
+          'status', 'createdAt', 'activityLog'
+        ])
+        && isValidId(lead.id)
         && lead.ownerId is string
         && lead.ownerId == request.auth.uid
         && lead.name is string
+        && lead.name.size() > 0
         && lead.name.size() <= 256
         && lead.country is string
+        && lead.country.size() > 0
         && lead.country.size() <= 128
         && lead.city is string
+        && lead.city.size() > 0
         && lead.city.size() <= 128
         && lead.category is string
+        && lead.category.size() > 0
         && lead.category.size() <= 128
         && lead.phone is string
-        && lead.phone.size() <= 32
+        && lead.phone.size() <= 80
         && lead.email is string
-        && lead.email.size() <= 256
+        && lead.email.size() <= 320
         && lead.status in ['new', 'contacted', 'proposal', 'negotiating', 'won', 'rejected']
         && lead.createdAt is string
-        && (!('notes' in lead) || (lead.notes is string))
+        && lead.activityLog is list
+        && lead.activityLog.size() <= 200
+        && (!('emailSent' in lead) || lead.emailSent is bool)
         && (!('address' in lead) || (lead.address is string && lead.address.size() <= 512))
-        && (!('outreachScriptSource' in lead) || (lead.outreachScriptSource is string && lead.outreachScriptSource.size() <= 64))
-        && (!('emailSent' in lead) || (lead.emailSent is bool))
-        && (!('tags' in lead) || (lead.tags is list))
-        && (!('activityLog' in lead) || (lead.activityLog is list))
-        && (!('outreachScript' in lead) || (lead.outreachScript is map))
-        && (!('analysis' in lead) || (lead.analysis is map));
+        && (!('linkedin' in lead) || (lead.linkedin is string && lead.linkedin.size() <= 512))
+        && (!('socials' in lead) || lead.socials is map)
+        && (!('websiteStatus' in lead) || (lead.websiteStatus is string && lead.websiteStatus.size() <= 500))
+        && (!('verified' in lead) || lead.verified is bool)
+        && (!('verificationSummary' in lead) || (lead.verificationSummary is string && lead.verificationSummary.size() <= 2000))
+        && (!('sourcePlatform' in lead) || (lead.sourcePlatform is string && lead.sourcePlatform.size() <= 128))
+        && (!('verificationScore' in lead) || (lead.verificationScore is number && lead.verificationScore >= 0 && lead.verificationScore <= 100))
+        && (!('notes' in lead) || (lead.notes is string && lead.notes.size() <= 5000))
+        && (!('outreachScriptSource' in lead) || (lead.outreachScriptSource is string && lead.outreachScriptSource.size() <= 128))
+        && (!('tags' in lead) || (lead.tags is list && lead.tags.size() <= 32))
+        && (!('activityLog' in lead) || lead.activityLog is list)
+        && (!('outreachScript' in lead) || lead.outreachScript is map)
+        && (!('analysis' in lead) || lead.analysis is map)
+        && (!('linkedinIntelligence' in lead) || lead.linkedinIntelligence is map)
+        && (!('webAdaptability' in lead) || lead.webAdaptability is map);
     }
 
-    // --- Search Queries ---
     match /queries/{queryId} {
       allow get: if isSignedIn() && isOwner(existing().userId);
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
 
       allow create: if isSignedIn()
         && isValidId(queryId)
         && isValidQuery(incoming())
         && isOwner(incoming().userId);
 
-      // Scan queries are historical records and cannot be updated
       allow update, delete: if false;
     }
 
     function isValidQuery(q) {
-      return q.keys().hasAll(['id', 'userId', 'city', 'country', 'category', 'discoveredCount', 'timestamp'])
-        && q.id is string
-        && q.id.size() <= 128
+      return hasOnlyKeys(q, ['id', 'userId', 'city', 'country', 'category', 'platforms', 'discoveredCount', 'resultsCount', 'timestamp', 'source'])
+        && q.keys().hasAll(['id', 'userId', 'city', 'country', 'category', 'discoveredCount', 'timestamp'])
+        && isValidId(q.id)
         && q.userId is string
         && q.userId == request.auth.uid
         && q.city is string
@@ -138,8 +192,12 @@ service cloud.firestore {
         && q.category is string
         && q.category.size() <= 128
         && q.discoveredCount is number
+        && q.discoveredCount >= 0
+        && q.discoveredCount <= 1000
         && q.timestamp is string
-        && (!('source' in q) || (q.source is string && q.source.size() <= 64));
+        && (!('platforms' in q) || (q.platforms is list && q.platforms.size() <= 8))
+        && (!('resultsCount' in q) || (q.resultsCount is number && q.resultsCount >= 0 && q.resultsCount <= 1000))
+        && (!('source' in q) || (q.source is string && q.source.size() <= 128));
     }
   }
 }

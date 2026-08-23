@@ -36,7 +36,7 @@ import {
 } from 'firebase/firestore';
 
 function AppContent() {
-  const { user, loading: authLoading, logout, profile, updateUserSubscription } = useAuth();
+  const { user, loading: authLoading, logout, profile } = useAuth();
   const [leads, setLeads] = useState<BusinessLead[]>([]);
   const [pastQueries, setPastQueries] = useState<any[]>([]);
   const [syncing, setSyncing] = useState<boolean>(true);
@@ -67,28 +67,41 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (window.location.pathname === '/billing-success' && user) {
-      // Proactively upgrade user directly in Firestore DB
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + 30); // 30 days premium subscription
-      
-      updateUserSubscription(
-        'pro',
-        'month',
-        expiryDate.toISOString(),
-        `paystack_sub_${Date.now()}`
-      )
-        .then(() => {
-          // Clear routing trace safely
-          window.history.replaceState({}, document.title, '/');
-          setPaystackSuccessNotice("🎉 Your LeadsRadar Pro upgrade is verified on Paystack! Enjoy 20 daily scans, SWOT competitive matrices, and conversational chatbot guides.");
-          setTimeout(() => setPaystackSuccessNotice(null), 10000);
-        })
-        .catch((err) => {
-          console.error("Error committing Paystack subscription upgrade:", err);
-        });
+    if (window.location.pathname !== '/billing-success' || !user) return;
+
+    const reference = new URLSearchParams(window.location.search).get('reference');
+    if (!reference) {
+      setPaystackSuccessNotice('We could not find a payment reference. Your account was not upgraded.');
+      return;
     }
-  }, [user, updateUserSubscription]);
+
+    let active = true;
+    apiFetch('/api/paystack/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference }),
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.verified) {
+          throw new Error('Payment verification failed.');
+        }
+        if (active) {
+          window.history.replaceState({}, document.title, '/');
+          setPaystackSuccessNotice('Your LeadsRadar Pro payment was verified successfully.');
+          setTimeout(() => setPaystackSuccessNotice(null), 10000);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setPaystackSuccessNotice('We could not verify this payment yet. Your account was not upgraded.');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
   
   // Dashboard/CRM Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -618,8 +631,8 @@ function AppContent() {
     );
   }
 
-  // Intercept local Stripe Sandbox Gateway URL routing
-  if (user && window.location.pathname === '/checkout-sandbox') {
+  // Development-only payment simulator; production checkout returns only provider URLs.
+  if (import.meta.env.DEV && user && window.location.pathname === '/checkout-sandbox') {
     return <CheckoutSandbox />;
   }
 

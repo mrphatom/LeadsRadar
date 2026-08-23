@@ -68,6 +68,10 @@ export const checkoutSessionSchema = z.object({
   period: z.enum(['month', 'year']).default('month'),
 }).strict();
 
+export const paystackVerifySchema = z.object({
+  reference: boundedText(200),
+}).strict();
+
 export const gmailConnectSchema = z.object({
   email: z.string().trim().email().max(320),
   token: boundedText(4096),

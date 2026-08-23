@@ -20,6 +20,7 @@ declare global {
     interface Request {
       requestId: string;
       principal?: Principal;
+      rawBody?: Buffer;
     }
   }
 }

@@ -15,10 +15,10 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
     connectGmail, 
     disconnectGmail, 
     connectOutlook, 
-    disconnectOutlook,
-    updateUserSubscription
+    disconnectOutlook
   } = useAuth();
   const isPro = profile?.subscriptionTier === 'pro';
+  const sandboxAllowed = import.meta.env.DEV;
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year'>('month');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -253,14 +253,14 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
 
             </div>
 
-            {/* Sandbox Developer Controls */}
+            {sandboxAllowed && (
             <div className="pt-4 border-t border-zinc-900 flex flex-col items-center gap-2 bg-zinc-950/40 p-4 rounded-xl border border-dashed border-orange-500/25">
               <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest font-bold">Sandbox Testing Console</span>
               <button
                 type="button"
                 onClick={async () => {
                   try {
-                    await updateUserSubscription('free', 'none');
+                    throw new Error('Subscription changes are managed by the payment service.');
                   } catch (err: any) {
                     alert(err.message || "Failed sandbox toggle.");
                   }
@@ -271,6 +271,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 Simulate Account Downgrade to Free Tier
               </button>
             </div>
+            )}
 
             <div className="pt-4 border-t border-zinc-850 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
               <span>Subscription ID: <span className="text-zinc-400">{profile?.subscriptionId || 'Active trial session'}</span></span>
@@ -384,21 +385,14 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 </span>
               </div>
 
-              {/* Sandbox Direct Pro Activation */}
+              {sandboxAllowed && (
               <div className="pt-4 border-t border-zinc-900 flex flex-col items-center gap-2 bg-zinc-950/40 p-4 rounded-xl border border-dashed border-orange-500/25">
                 <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest font-bold">Sandbox Testing Console</span>
                 <button
                   type="button"
                   onClick={async () => {
                     try {
-                      const expiryDate = new Date();
-                      expiryDate.setDate(expiryDate.getDate() + 30);
-                      await updateUserSubscription(
-                        'pro',
-                        'month',
-                        expiryDate.toISOString(),
-                        `sandbox_direct_${Date.now()}`
-                      );
+                      throw new Error('Use the development checkout simulator to test payment activation.');
                     } catch (err: any) {
                       alert(err.message || "Failed sandbox upgrade.");
                     }
@@ -409,6 +403,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                   Instantly Activate Pro Tier
                 </button>
               </div>
+              )}
             </div>
           </div>
         )}

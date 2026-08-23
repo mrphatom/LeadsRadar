@@ -14,9 +14,11 @@ import { getRuntimeConfig } from "./src/server/runtimeConfig.ts";
 import { errorHandler, logEvent, requestContext, requireAuth, requirePrincipal, requirePro, sendApiError, validateBody } from "./src/server/http.ts";
 import { ApiError, isAllowedOrigin } from "./src/server/security.ts";
 import { createEncryptionService } from "./src/server/crypto.ts";
+import { isVerifiedPaystackTransaction, parsePaystackMetadata, verifyPaystackSignature } from "./src/server/payments.ts";
 import {
   chatAssistantSchema,
   checkoutSessionSchema,
+  paystackVerifySchema,
   enrichLeadSchema,
   generateAnalysisSchema,
   generatePitchSchema,
@@ -49,7 +51,12 @@ app.use(cors({
   },
   credentials: false,
 }));
-app.use(express.json({ limit: runtimeConfig.jsonBodyLimit }));
+app.use(express.json({
+  limit: runtimeConfig.jsonBodyLimit,
+  verify: (req, _res, buffer) => {
+    (req as express.Request).rawBody = Buffer.from(buffer);
+  },
+}));
 app.use("/api", rateLimit({
   windowMs: 60 * 1000,
   limit: 120,
@@ -211,7 +218,7 @@ const authenticate = requireAuth(async (token) => {
 });
 
 app.use("/api", (req, res, next) => {
-  if (req.path === "/config") {
+  if (req.path === "/config" || req.path === "/paystack/webhook") {
     next();
     return;
   }
@@ -1207,6 +1214,95 @@ app.post("/api/paystack/create-checkout-session", validateBody(checkoutSessionSc
     const sandboxUrl = `/checkout-sandbox?period=${period}&success_url=${encodeURIComponent(successUrl)}&cancel_url=${encodeURIComponent(cancelUrl)}`;
     res.json({ url: sandboxUrl, isMock: true, warning: 'Payment service unavailable; development sandbox returned.' });
   }
+});
+
+async function grantProSubscription(transactionData: any, uid: string, period: 'month' | 'year'): Promise<void> {
+  if (!db) {
+    throw new Error('Firestore server is not configured.');
+  }
+  const reference = typeof transactionData.reference === 'string' ? transactionData.reference : '';
+  if (!reference) {
+    throw new Error('Payment reference is missing.');
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + (period === 'year' ? 365 : 30));
+  const userRef = db.collection('users').doc(uid);
+
+  await db.runTransaction(async (transaction: any) => {
+    const snapshot = await transaction.get(userRef);
+    const existing = snapshot.data() || {};
+    if (existing.lastPaymentReference === reference && existing.subscriptionTier === 'pro') {
+      return;
+    }
+    transaction.set(userRef, {
+      subscriptionTier: 'pro',
+      subscriptionPeriod: period,
+      subscriptionId: reference,
+      lastPaymentReference: reference,
+      trialExpires: expiresAt.toISOString(),
+      subscriptionSource: 'paystack',
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  });
+}
+
+app.post("/api/paystack/verify", validateBody(paystackVerifySchema), async (req, res) => {
+  const principal = requirePrincipal(req);
+  const { reference } = req.body;
+
+  if (!process.env.PAYSTACK_SECRET_KEY) {
+    if (runtimeConfig.allowDemoMode && reference.startsWith('sandbox_')) {
+      await grantProSubscription({ reference, status: 'success', customer: { email: principal.email }, metadata: { uid: principal.uid, tier: 'pro' } }, principal.uid, 'month');
+      return res.json({ verified: true, mode: 'sandbox' });
+    }
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Payment service is temporarily unavailable.'));
+  }
+
+  try {
+    const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+    });
+    const payload = await response.json() as { status?: boolean; data?: any };
+    if (!response.ok || !payload.status || !payload.data) {
+      return sendApiError(res, req, new ApiError(402, 'PAYMENT_REQUIRED', 'Payment could not be verified.'));
+    }
+
+    const metadata = parsePaystackMetadata(payload.data.metadata);
+    const period = metadata.period === 'year' ? 'year' : 'month';
+    if (!isVerifiedPaystackTransaction(payload.data, { uid: principal.uid, email: principal.email, tier: 'pro' })) {
+      return sendApiError(res, req, new ApiError(403, 'FORBIDDEN', 'Payment does not belong to this account.'));
+    }
+
+    await grantProSubscription(payload.data, principal.uid, period);
+    logEvent('info', 'paystack_payment_verified', req, { period });
+    return res.json({ verified: true, mode: 'paystack' });
+  } catch (error) {
+    logEvent('error', 'paystack_payment_verification_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Payment verification is temporarily unavailable.'));
+  }
+});
+
+app.post("/api/paystack/webhook", (req, res) => {
+  const signature = req.headers['x-paystack-signature'];
+  const normalizedSignature = Array.isArray(signature) ? signature[0] : signature;
+  const rawBody = req.rawBody || JSON.stringify(req.body);
+  if (!verifyPaystackSignature(rawBody, normalizedSignature, process.env.PAYSTACK_SECRET_KEY)) {
+    return sendApiError(res, req, new ApiError(401, 'UNAUTHORIZED', 'Invalid webhook signature.'));
+  }
+
+  res.status(200).json({ received: true });
+  const event = req.body as { event?: string; data?: any };
+  if (event.event !== 'charge.success' || !event.data) return;
+
+  const metadata = parsePaystackMetadata(event.data.metadata);
+  const uid = typeof metadata.uid === 'string' ? metadata.uid : '';
+  const email = typeof event.data.customer?.email === 'string' ? event.data.customer.email : undefined;
+  if (!uid || !isVerifiedPaystackTransaction(event.data, { uid, email, tier: 'pro' })) return;
+  const period = metadata.period === 'year' ? 'year' : 'month';
+  void grantProSubscription(event.data, uid, period).catch((error) => {
+    logEvent('error', 'paystack_webhook_fulfillment_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+  });
 });
 
 // Pro Mode: Generate Broader SEO & SWOT Competitor Analysis

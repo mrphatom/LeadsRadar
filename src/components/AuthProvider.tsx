@@ -40,12 +40,6 @@ interface AuthContextType {
   signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
   signInAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
-  updateUserSubscription: (
-    tier: 'free' | 'pro', 
-    period: 'month' | 'year' | 'none', 
-    trialExpires?: string, 
-    subId?: string
-  ) => Promise<void>;
   gmailAccessToken: string | null;
   connectGmail: () => Promise<void>;
   disconnectGmail: () => Promise<void>;
@@ -300,33 +294,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateUserSubscription = async (
-    tier: 'free' | 'pro', 
-    period: 'month' | 'year' | 'none', 
-    trialExpires: string = '', 
-    subId: string = ''
-  ) => {
-    if (!user) return;
-    localStorage.setItem('leadsradar_subscription_tier', tier);
-    localStorage.setItem(`leadsradar_subscription_tier_${user.uid}`, tier);
-    const userRef = doc(db, 'users', user.uid);
-    try {
-      await setDoc(userRef, {
-        uid: user.uid,
-        email: user.email || '',
-        displayName: user.displayName || profile?.displayName || 'Outreach Member',
-        photoURL: user.photoURL || profile?.photoURL || '',
-        subscriptionTier: tier,
-        subscriptionPeriod: period,
-        trialExpires,
-        subscriptionId: subId
-      }, { merge: true });
-    } catch (err) {
-      console.error("Failed to commit subscription update inDB:", err);
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
-    }
-  };
-
   const [gmailAccessToken, setGmailAccessToken] = useState<string | null>(null);
 
   const connectGmail = async () => {
@@ -430,7 +397,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signUpWithEmail, 
       signInAsGuest,
       logout,
-      updateUserSubscription,
       gmailAccessToken,
       connectGmail,
       disconnectGmail,

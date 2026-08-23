@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { CreditCard, ShieldCheck, ArrowLeft, Loader2, Sparkles, Building2 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { apiFetch } from '../apiClient';
 
 export default function CheckoutSandbox() {
-  const { user, profile, updateUserSubscription } = useAuth();
+  const { user, profile } = useAuth();
+  const sandboxAllowed = import.meta.env.DEV;
   const [loading, setLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [paystackGatewayError, setPaystackGatewayError] = useState<string | null>(null);
@@ -38,21 +40,21 @@ export default function CheckoutSandbox() {
     setLoading(true);
     setCheckoutError(null);
     try {
-      // Set trial expiration for 3 days
-      const trialDate = new Date();
-      trialDate.setDate(trialDate.getDate() + 3);
-      
-      await updateUserSubscription(
-        'pro', 
-        params.period as 'month' | 'year', 
-        trialDate.toISOString(), 
-        `mock_sub_${Date.now()}`
-      );
-      
-      // Artificial short delay to emulate bank confirmation
-      setTimeout(() => {
-        window.location.href = params.successUrl;
-      }, 1200);
+      if (!sandboxAllowed) {
+        throw new Error('Sandbox checkout is disabled outside development builds.');
+      }
+
+      const response = await apiFetch('/api/paystack/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference: `sandbox_${Date.now()}` }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.verified) {
+        throw new Error('Sandbox payment verification failed.');
+      }
+
+      window.location.href = '/';
     } catch (err: any) {
       setCheckoutError("Error logging sandbox purchase: " + err.message);
       setLoading(false);
@@ -214,7 +216,7 @@ export default function CheckoutSandbox() {
             )}
             <button
               onClick={handleSimulatePayment}
-              disabled={loading}
+              disabled={loading || !sandboxAllowed}
               className="w-full bg-orange-500 hover:bg-orange-600 text-zinc-950 disabled:opacity-50 py-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-orange-500/10 active:scale-98"
             >
               {loading ? (
