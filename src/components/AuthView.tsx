@@ -31,14 +31,16 @@ export const AuthView: React.FC = () => {
         await signInWithEmail(email, password);
       }
     } catch (err: any) {
-      console.error(err);
-      let message = err.message || 'An error occurred during authentication.';
+      const errorCode = typeof err?.code === 'string' ? err.code : 'auth/unknown';
+      let message = 'Authentication could not be completed. Please check your details and retry.';
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         message = 'Invalid email or password.';
       } else if (err.code === 'auth/email-already-in-use') {
         message = 'An account with this email already exists.';
       } else if (err.code === 'auth/operation-not-allowed') {
-        message = 'Email & password login is disabled. Please run Google Sign-In or enable Email auth in your Firebase console.';
+        message = 'Email and password sign-in is not enabled for this project. Try Google sign-in or contact the workspace administrator.';
+      } else if (errorCode === 'auth/invalid-email') {
+        message = 'Enter a valid email address.';
       }
       setError(message);
     } finally {
@@ -51,9 +53,8 @@ export const AuthView: React.FC = () => {
     setError(null);
     try {
       await signInWithGoogle();
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Failed to sign in with Google.');
+    } catch (_err: any) {
+      setError('Google sign-in could not be completed. Please retry or use email sign-in.');
     } finally {
       setLoading(false);
     }
@@ -64,9 +65,8 @@ export const AuthView: React.FC = () => {
     setError(null);
     try {
       await signInAsGuest();
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Failed to start demo workspace.');
+    } catch (_err: any) {
+      setError('Guest access could not be started. Please retry or use a personal account.');
     } finally {
       setLoading(false);
     }
@@ -92,7 +92,7 @@ export const AuthView: React.FC = () => {
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white">LeadsRadar</h1>
           <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
-            Interactive B2B search engine & outbound CRM mapping web-absence local businesses directly to premium HTML pipelines.
+            Evidence-first local business discovery and outreach workspace. Provider records stay distinct from your own notes and optional generated drafts.
           </p>
         </div>
 
@@ -100,12 +100,16 @@ export const AuthView: React.FC = () => {
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl space-y-6">
           <div className="flex border-b border-zinc-800 pb-4">
             <button
+              type="button"
+              aria-selected={!isRegister}
               onClick={() => { setIsRegister(false); setError(null); }}
               className={`flex-1 text-center py-2 text-xs font-bold tracking-wider uppercase transition-colors ${!isRegister ? 'text-orange-500 border-b-2 border-orange-500 -mb-[18px]' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
               Sign In
             </button>
             <button
+              type="button"
+              aria-selected={isRegister}
               onClick={() => { setIsRegister(true); setError(null); }}
               className={`flex-1 text-center py-2 text-xs font-bold tracking-wider uppercase transition-colors ${isRegister ? 'text-orange-500 border-b-2 border-orange-500 -mb-[18px]' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
@@ -114,7 +118,7 @@ export const AuthView: React.FC = () => {
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-950 text-rose-400 text-xs p-3.5 rounded-xl">
+            <div role="alert" className="flex items-start gap-2 bg-rose-500/10 border border-rose-950 text-rose-400 text-xs p-3.5 rounded-xl">
               <AlertCircle className="h-4.5 w-4.5 shrink-0 text-rose-500 mt-0.5" />
               <div>
                 <p className="font-bold">Authentication Failed</p>
@@ -191,7 +195,7 @@ export const AuthView: React.FC = () => {
           {/* Separation indicator */}
           <div className="flex items-center gap-3">
             <div className="flex-1 h-[1px] bg-zinc-800" />
-            <span className="text-[10px] font-semibold text-zinc-650 uppercase tracking-wide">Or connect via</span>
+            <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">Or connect via</span>
             <div className="flex-1 h-[1px] bg-zinc-800" />
           </div>
 
@@ -199,7 +203,7 @@ export const AuthView: React.FC = () => {
           <button
             onClick={handleGoogleAuth}
             disabled={loading}
-            className="w-full py-2.5 rounded-lg border border-zinc-800 hover:bg-zinc-850 bg-zinc-950 hover:border-zinc-700 text-xs font-semibold text-zinc-300 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            className="w-full py-2.5 rounded-lg border border-zinc-800 hover:bg-zinc-800 bg-zinc-950 hover:border-zinc-700 text-xs font-semibold text-zinc-300 flex items-center justify-center gap-2 cursor-pointer transition-colors"
           >
             {/* Elegant SVG Google Icon */}
             <svg className="h-4 w-4" viewBox="0 0 24 24">
@@ -211,7 +215,7 @@ export const AuthView: React.FC = () => {
             Continue with Google account
           </button>
 
-          {/* Instant Demo Guest Button */}
+          {/* Guest session button */}
           <button
             type="button"
             onClick={handleGuestAuth}
@@ -219,7 +223,7 @@ export const AuthView: React.FC = () => {
             className="w-full py-2 rounded-lg border border-orange-500/30 hover:border-orange-500/60 bg-orange-500/5 hover:bg-orange-500/10 text-xs font-semibold text-orange-400 flex items-center justify-center gap-2 cursor-pointer transition-colors"
           >
             <Play className="h-3.5 w-3.5 fill-orange-400 text-orange-400" />
-            Explore Instant Demo Workspace (No signup required)
+            Continue as guest (limited workspace)
           </button>
 
           {isRegister && (

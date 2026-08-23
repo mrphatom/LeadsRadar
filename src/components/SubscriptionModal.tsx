@@ -85,8 +85,13 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
   };
 
   return (
-    <div className="fixed inset-0 bg-zinc-950/95 flex items-center justify-center p-4 z-55 overflow-y-auto w-full">
-      <div className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-3xl p-6 md:p-8 shadow-2xl overflow-hidden max-h-[90vh]">
+    <div className="fixed inset-0 bg-zinc-950/95 flex items-center justify-center p-3 sm:p-4 z-55 overflow-y-auto w-full" role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="subscription-modal-title"
+        className="relative w-full max-w-xl bg-zinc-900 border border-zinc-800 rounded-2xl sm:rounded-3xl p-5 sm:p-6 md:p-8 shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto"
+      >
         
         {/* Decorative corner glows */}
         <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500/15 rounded-full blur-2xl pointer-events-none" />
@@ -95,11 +100,13 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
         {/* Header section */}
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-1.5 font-bold text-orange-400 text-xs uppercase tracking-wider font-mono">
-            <Sparkles className="h-4 w-4 text-orange-500 animate-pulse" /> Upgrade to LeadsRadar Premium
+            <Sparkles className="h-4 w-4 text-orange-500" /> Upgrade to LeadsRadar Premium
           </div>
-          <button 
+          <button
+            type="button"
+            aria-label="Close subscription dialog"
             onClick={onClose}
-            className="text-zinc-550 hover:text-white p-1 rounded-lg bg-zinc-950/40 hover:bg-zinc-950 transition-all cursor-pointer border border-zinc-805"
+            className="text-zinc-500 hover:text-white p-1 rounded-lg bg-zinc-950/40 hover:bg-zinc-950 transition-all cursor-pointer border border-zinc-800"
           >
             <X className="h-4 w-4" />
           </button>
@@ -117,7 +124,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
             </div>
 
             {/* Email Integrations Menu (Pro Exclusive Features) */}
-            <div className="space-y-4 bg-zinc-950/60 border border-zinc-850 p-5 rounded-2xl">
+            <div className="space-y-4 bg-zinc-950/60 border border-zinc-800 p-5 rounded-2xl">
               <div className="flex items-center gap-1.5 pb-2.5 border-b border-zinc-900">
                 <Mail className="h-4.5 w-4.5 text-orange-500" />
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Outbound Email Connection Settings</h3>
@@ -143,14 +150,14 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                       <Check className="h-3 w-3" /> Connected
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 bg-zinc-950 text-zinc-500 px-2 py-0.5 rounded-md border border-zinc-805 text-[9px] font-semibold uppercase font-mono">
+                    <div className="flex items-center gap-1.5 bg-zinc-950 text-zinc-500 px-2 py-0.5 rounded-md border border-zinc-800 text-[9px] font-semibold uppercase font-mono">
                       Disconnected
                     </div>
                   )}
                 </div>
 
                 {profile?.gmailConnected ? (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-zinc-850/50">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-zinc-800/50">
                     <span className="text-xs font-mono text-zinc-400">
                       📧 Connected as: <strong className="text-white select-all">{profile.gmailEmail}</strong>
                     </span>
@@ -167,7 +174,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                     </button>
                   </div>
                 ) : (
-                  <div className="pt-2 border-t border-zinc-850/50 flex flex-col gap-2">
+                  <div className="pt-2 border-t border-zinc-800/50 flex flex-col gap-2">
                     <button
                       type="button"
                       disabled={gmailConnecting}
@@ -211,7 +218,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
 
             </div>
 
-            <div className="pt-4 border-t border-zinc-850 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
+            <div className="pt-4 border-t border-zinc-800 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
               <span>Subscription ID: <span className="text-zinc-400">{profile?.subscriptionId || 'Provider-confirmed subscription'}</span></span>
               <span>Workspace License Verified</span>
             </div>
@@ -219,7 +226,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
         ) : (
           <div className="space-y-6">
             <div className="text-center md:text-left">
-              <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
+              <h2 id="subscription-modal-title" className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
                 Unlock LeadsRadar Pro
               </h2>
               <p className="text-xs text-zinc-400 mt-1">
@@ -259,7 +266,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
             </div>
 
             {/* Comparison specs list */}
-            <div className="space-y-3 bg-zinc-950/40 border border-zinc-850 p-4.5 rounded-2xl">
+            <div className="space-y-3 bg-zinc-950/40 border border-zinc-800 p-4.5 rounded-2xl">
               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-1">
                 Premium Feature Packages Include:
               </span>
@@ -292,7 +299,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
             </div>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3.5 rounded-xl text-xs flex items-start gap-2">
+              <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-400 p-3.5 rounded-xl text-xs flex items-start gap-2">
                 <span className="font-extrabold shrink-0">⚠️ Error: </span>
                 <span>{error}</span>
               </div>

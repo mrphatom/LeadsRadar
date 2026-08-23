@@ -346,7 +346,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
             </p>
           </div>
 
-          <div className="bg-zinc-950 px-3.5 py-2 rounded-xl border border-zinc-850 flex items-center gap-3">
+          <div className="bg-zinc-950 px-3.5 py-2 rounded-xl border border-zinc-800 flex items-center gap-3">
             <div className="flex flex-col">
               <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Daily Scanner Quota</span>
               <span className="text-xs text-zinc-300 font-bold">
@@ -392,7 +392,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
             }`}
           >
             <Clock className="h-3.5 w-3.5" />
-            Weekly Scan Planner
+            Manual Territory Plan
           </button>
         </div>
       </div>
@@ -458,7 +458,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   placeholder="e.g. Austin or Berlin"
-                  className="w-full text-sm py-2 px-3 pr-8 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-655"
+                  className="w-full text-sm py-2 px-3 pr-8 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-600"
                   required
                 />
               </div>
@@ -520,7 +520,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
           {/* Evidence policy */}
           <div className="flex flex-wrap items-center gap-3 bg-zinc-950/45 p-3.5 rounded-2xl border border-zinc-900 text-xs">
             <span className="font-bold text-zinc-500 uppercase tracking-wider text-[10px]">Evidence Policy:</span>
-            <span className="flex items-center gap-2 text-zinc-350">
+            <span className="flex items-center gap-2 text-zinc-400">
               <CheckSquare className="h-4.5 w-4.5 text-orange-500 shrink-0" />
               Google Places records only; no generated business identities, contact details, ratings, or social profiles.
             </span>
@@ -631,7 +631,8 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
         /* TAB 2: WEEKLY SCAN PLANNER */
         profile?.subscriptionTier !== 'pro' ? (
           <div className="bg-zinc-950/40 border border-orange-500/15 p-8 rounded-2xl text-center space-y-4 animate-fadeIn relative overflow-hidden">
-            <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl" />
+              <p className="text-[10px] uppercase tracking-[0.18em] text-orange-400/80 font-semibold">Pro workspace feature</p>
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl" />
             <div className="mx-auto w-12 h-12 rounded-full bg-orange-500/15 flex items-center justify-center border border-orange-500/20 mb-2">
               <Lock className="h-5 w-5 text-orange-400" />
             </div>
@@ -643,15 +644,15 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
             </p>
             
             <div className="grid grid-cols-3 gap-3 max-w-sm mx-auto pt-2 text-[10px] font-mono">
-              <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl">
+              <div className="bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl">
                 <span className="text-zinc-500 block uppercase">Session Plan</span>
                 <span className="text-white font-bold font-sans">Manual</span>
               </div>
-              <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl">
+              <div className="bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl">
                 <span className="text-zinc-500 block uppercase">Pro Limit</span>
                 <span className="text-orange-400 font-bold font-sans">20 scans/day</span>
               </div>
-              <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl">
+              <div className="bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl">
                 <span className="text-zinc-500 block uppercase">Alerts</span>
                 <span className="text-white font-bold font-sans">Not configured</span>
               </div>
@@ -663,13 +664,13 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
                 onClick={onUpgradeClick}
                 className="w-full bg-orange-500 hover:bg-orange-600 font-extrabold text-zinc-950 py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-orange-500/15 hover:scale-102 active:scale-98 transition-all"
               >
-                <Zap className="h-4 w-4 text-zinc-950 fill-zinc-950 animate-pulse" /> Start 3-day Free Trial
+                <Zap className="h-4 w-4 text-zinc-950 fill-zinc-950" /> Upgrade with MoonPay
               </button>
             </div>
           </div>
         ) : (
           <div className="space-y-6 animate-fadeIn">
-          <div className="bg-zinc-950 rounded-2xl border border-zinc-850 p-5 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-zinc-950 rounded-2xl border border-zinc-800 p-5 grid grid-cols-1 md:grid-cols-3 gap-6">
             
             {/* Status indicators */}
             <div className="space-y-2">
@@ -677,12 +678,14 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
               <div className="flex items-center gap-2">
                 <button 
                   type="button"
+                  aria-pressed={schedulerActive}
+                  aria-label={schedulerActive ? 'Disable manual territory plan' : 'Enable manual territory plan'}
                   onClick={() => setSchedulerActive(!schedulerActive)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-hidden ${
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-hidden focus:ring-2 focus:ring-orange-500/40 ${
                     schedulerActive ? 'bg-orange-500' : 'bg-zinc-800'
                   }`}
                 >
-                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-zinc-905 shadow-xs ring-0 transition duration-200 ${
+                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-zinc-900 shadow-xs ring-0 transition duration-200 ${
                     schedulerActive ? 'translate-x-4' : 'translate-x-0'
                   }`} />
                 </button>
@@ -697,20 +700,20 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
 
             {/* Run summaries */}
             <div className="space-y-1">
-              <span className="block text-[10px] font-bold text-zinc-550 uppercase tracking-wider">Sync Chronology logs</span>
+              <span className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Sync Chronology logs</span>
               <div className="flex items-center gap-2 text-xs text-zinc-300">
                 <Clock className="h-3.5 w-3.5 text-zinc-500" />
                 <span>Last Sync: <strong>{lastSyncTime || 'Pending First Cycle'}</strong></span>
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-400">
                 <Calendar className="h-3.5 w-3.5 text-zinc-500" />
-                <span>Planned Next Run: <strong>{nextSyncTime}</strong></span>
+                  <span>Next planned session: <strong>{nextSyncTime || 'Not planned'}</strong></span>
               </div>
             </div>
 
             {/* Planner filtration info */}
             <div className="space-y-1">
-              <span className="block text-[10px] font-bold text-zinc-555 uppercase tracking-wider">Audit Profile Filters</span>
+              <span className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Audit Profile Filters</span>
               <div className="text-xs space-y-1 text-zinc-300">
                 <div className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
@@ -728,7 +731,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
             {/* Regions Subscriptions Checklist */}
-            <div className="bg-zinc-950/25 border border-zinc-850 rounded-2xl p-5">
+            <div className="bg-zinc-950/25 border border-zinc-800 rounded-2xl p-5">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Globe className="h-4 w-4 text-orange-500" />
                   Manual Scan Regions ({selectedCities.length})
@@ -755,7 +758,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
                       {isChecked ? (
                         <CheckSquare className="h-4 w-4 text-orange-500" />
                       ) : (
-                        <Square className="h-4 w-4 text-zinc-850" />
+                        <Square className="h-4 w-4 text-zinc-800" />
                       )}
                     </button>
                   );
@@ -764,7 +767,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
             </div>
 
             {/* Sync Command & Live console */}
-            <div className="bg-zinc-950/25 border border-zinc-850 rounded-2xl p-5 flex flex-col justify-between">
+            <div className="bg-zinc-950/25 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between">
               <div>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
                   <Sliders className="h-4 w-4 text-orange-500" />
@@ -776,7 +779,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
 
                 {/* Automation Log Feed console */}
                 {syncLogs.length > 0 && (
-                  <div className="bg-zinc-950/80 border border-zinc-900 rounded-xl p-3 h-32 overflow-y-auto font-mono text-[9px] text-zinc-400 space-y-1 scrollbar-thin select-text">
+                  <div role="log" aria-live="polite" className="bg-zinc-950/80 border border-zinc-900 rounded-xl p-3 h-32 overflow-y-auto font-mono text-[9px] text-zinc-400 space-y-1 scrollbar-thin select-text">
                     {syncLogs.map((logStr, lIdx) => (
                       <div key={lIdx} className={logStr.includes('[SEARCH]') ? 'text-orange-400/80' : logStr.includes('[SAVED]') ? 'text-emerald-400' : logStr.includes('[ERROR]') ? 'text-red-400' : 'text-zinc-400'}>
                         {logStr}
@@ -803,7 +806,7 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
                   type="button"
                   onClick={handleTriggerWeeklySync}
                   disabled={isSyncingAll}
-                  className="flex-1 bg-white hover:bg-zinc-100 text-zinc-950 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:bg-zinc-805 disabled:text-zinc-500"
+                  className="flex-1 bg-white hover:bg-zinc-100 text-zinc-950 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:bg-zinc-800 disabled:text-zinc-500"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isSyncingAll ? 'animate-spin' : ''}`} />
                   {isSyncingAll ? 'Running Sync Pipeline...' : 'Run Manual Territory Sync'}

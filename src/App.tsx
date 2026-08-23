@@ -565,15 +565,18 @@ function AppContent() {
   };
 
   // Filter application pipeline list logic
+  const availableCountries = Array.from(new Set(leads.map((lead) => lead.country).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b));
+
   const filteredLeads = leads.filter(lead => {
     const searchLower = searchQuery.toLowerCase();
     const queryMatches = !searchQuery || 
       lead.name.toLowerCase().includes(searchLower) ||
       lead.city.toLowerCase().includes(searchLower) ||
       lead.category.toLowerCase().includes(searchLower) ||
-      lead.phone.toLowerCase().includes(searchLower) ||
-      lead.email.toLowerCase().includes(searchLower) ||
-      lead.notes.toLowerCase().includes(searchLower);
+      String(lead.phone || '').toLowerCase().includes(searchLower) ||
+      String(lead.email || '').toLowerCase().includes(searchLower) ||
+      String(lead.notes || '').toLowerCase().includes(searchLower);
 
     const countryMatches = filterCountry === 'All' || lead.country === filterCountry;
     const statusMatches = filterStatus === 'All' || lead.status === filterStatus;
@@ -587,7 +590,7 @@ function AppContent() {
       <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-center items-center gap-4">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-orange-500/10 rounded-full blur-3xl" />
         <Building2 className="h-10 w-10 text-orange-500 animate-spin z-10" />
-        <p className="text-xs font-semibold text-zinc-500 tracking-wider uppercase animate-pulse z-10">Initializing Workspace Securites...</p>
+        <p className="text-xs font-semibold text-zinc-500 tracking-wider uppercase animate-pulse z-10">Preparing your evidence-first workspace...</p>
       </div>
     );
   }
@@ -761,7 +764,7 @@ function AppContent() {
       </header>
 
       {/* Main Container screen content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="mx-auto w-full max-w-[92rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         
          {/* TOP COMPONENT: Provider-backed search scanner (only shown on Dashboard tab) */}
         {viewTab === 'leads' && (
@@ -803,15 +806,15 @@ function AppContent() {
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-zinc-500 font-medium">Country:</span>
                   <select
+                    aria-label="Filter by country"
                     value={filterCountry}
                     onChange={(e) => setFilterCountry(e.target.value as CountryType | 'All')}
-                    className="text-xs bg-zinc-950 border border-zinc-800 text-zinc-300 py-1.5 px-2 rounded-lg focus:outline-hidden font-medium"
+                    className="min-w-0 max-w-full text-xs bg-zinc-950 border border-zinc-800 text-zinc-300 py-1.5 px-2 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-orange-500/30 font-medium"
                   >
-                    <option value="All">All Territories</option>
-                    <option value="USA">USA 🇺🇸</option>
-                    <option value="UK">UK 🇬🇧</option>
-                    <option value="Germany">Germany 🇩🇪</option>
-                    <option value="Canada">Canada 🇨🇦</option>
+                    <option value="All">All territories</option>
+                    {availableCountries.map((availableCountry) => (
+                      <option key={availableCountry} value={availableCountry}>{availableCountry}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -819,9 +822,10 @@ function AppContent() {
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-zinc-500 font-medium">Status:</span>
                   <select
+                    aria-label="Filter by pipeline status"
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value as LeadStatus | 'All')}
-                    className="text-xs bg-zinc-950 border border-zinc-800 text-zinc-300 py-1.5 px-2.5 rounded-lg focus:outline-hidden font-medium"
+                    className="min-w-0 max-w-full text-xs bg-zinc-950 border border-zinc-800 text-zinc-300 py-1.5 px-2.5 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-orange-500/30 font-medium"
                   >
                     <option value="All">All Pipeline Stages</option>
                     <option value="new">🆕 New Prospects</option>
@@ -849,10 +853,11 @@ function AppContent() {
                 <button
                   onClick={handlePurgeDatabase}
                   className="text-xs text-red-400 hover:text-red-300 border border-red-950/50 hover:border-red-900 py-1.5 px-2.5 rounded-lg bg-red-500/10 flex items-center gap-1 cursor-pointer font-semibold transition-colors"
-                  title="Reset to default seed databases"
+                    title="Clear your workspace data"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  Reset
+                                      Clear workspace
+
                 </button>
               </div>
 
@@ -877,7 +882,7 @@ function AppContent() {
                         return next;
                       });
                     }}
-                    className="h-4 w-4 rounded border-zinc-750 bg-zinc-950 text-orange-500 focus:ring-orange-500/20 focus:ring-offset-zinc-950 cursor-pointer accent-orange-500"
+                    className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-orange-500 focus:ring-orange-500/20 focus:ring-offset-zinc-950 cursor-pointer accent-orange-500"
                   />
                   <span>Select All ({filteredLeads.length})</span>
                 </label>
@@ -886,7 +891,7 @@ function AppContent() {
                   Displaying <strong>{filteredLeads.length}</strong> matching prospects out of <strong>{leads.length}</strong> total pipeline logs.
                 </span>
               </div>
-              <span className="font-mono text-[10px] text-zinc-650 flex items-center gap-1 animate-pulse justify-end">
+              <span className="font-mono text-[10px] text-zinc-600 flex items-center gap-1 animate-pulse justify-end">
                 <Database className="h-3.5 w-3.5" />
                 {syncing ? 'SYNCING CLOUD PORTAL...' : 'PERSONAL CLOUD DATA ONLINE'}
               </span>
@@ -912,7 +917,7 @@ function AppContent() {
                         }
                       }}
                       defaultValue=""
-                      className="text-xs bg-zinc-950 border border-zinc-805 text-zinc-200 py-1.5 px-2.5 rounded-lg focus:outline-hidden font-semibold cursor-pointer"
+                      className="text-xs bg-zinc-950 border border-zinc-800 text-zinc-200 py-1.5 px-2.5 rounded-lg focus:outline-hidden font-semibold cursor-pointer"
                     >
                       <option value="" disabled>-- select stage --</option>
                       <option value="new">🆕 New Prospect</option>
@@ -1119,11 +1124,11 @@ function AppContent() {
                     <div className="text-[11px] text-zinc-400">Google Places records are source-linked at retrieval time; missing contacts are not inferred.</div>
                   </div>
                 </div>
-                <div className="flex items-start gap-2.5 bg-zinc-900/60 border border-zinc-800/80 p-2.5 rounded-xl text-xs">
+                  <div className="flex items-start gap-2.5 bg-zinc-900/60 border border-zinc-800/80 p-2.5 rounded-xl text-xs">
                   <Lock className="h-4 w-4 text-orange-400 shrink-0 mt-0.5" />
                   <div>
-                    <div className="font-semibold text-white">256-bit Cloud Workspace Encryption</div>
-                    <div className="text-[11px] text-zinc-400">Personalized Firestore data isolation & MoonPay verified on-ramp.</div>
+                    <div className="font-semibold text-white">Protected workspace credentials</div>
+                    <div className="text-[11px] text-zinc-400">Gmail integration tokens are encrypted server-side; Firestore records remain owner-scoped.</div>
                   </div>
                 </div>
               </div>

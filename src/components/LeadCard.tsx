@@ -70,6 +70,7 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [refreshingProvider, setRefreshingProvider] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const hasPhone = !sanitizedLead.phone.toLowerCase().includes('no public');
   const hasEmail = !sanitizedLead.email.toLowerCase().includes('not publicly listed');
   const hasGooglePlacesSource = sanitizedLead.verificationMethod === 'google-places'
@@ -118,8 +119,13 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
     }
   };
 
-  const copyToClipboard = (text: string, type: 'phone' | 'email') => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string, type: 'phone' | 'email') => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      setErrorMessage('Copy is unavailable in this browser. Select the value manually.');
+      return;
+    }
     if (type === 'phone') {
       setCopiedPhone(true);
       setTimeout(() => setCopiedPhone(false), 2000);
@@ -158,6 +164,11 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
       }`}
     >
       <div>
+        {errorMessage && (
+          <div role="status" className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[10px] text-amber-300">
+            {errorMessage}
+          </div>
+        )}
         {/* Header (Status, Checkbox, Country) */}
         <div className="flex justify-between items-start gap-2 mb-3">
           <div className="flex items-center gap-2">
@@ -166,7 +177,7 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
               checked={isSelected}
               onChange={() => onToggleSelect?.()}
               onClick={(e) => e.stopPropagation()}
-              className="h-4 w-4 rounded border-zinc-750 bg-zinc-950 text-orange-500 focus:ring-orange-500/20 focus:ring-offset-zinc-950 cursor-pointer accent-orange-500"
+              className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-orange-500 focus:ring-orange-500/20 focus:ring-offset-zinc-950 cursor-pointer accent-orange-500"
             />
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${currentTheme.bg} ${currentTheme.text}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${currentTheme.dot}`} />
@@ -228,21 +239,26 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
         </p>
       </div>
 
-      <div className="mt-5 pt-4 border-t border-zinc-850 space-y-3.5">
+      <div className="mt-5 pt-4 border-t border-zinc-800 space-y-3.5">
         {/* Detail info: Dial or Email */}
         <div className="space-y-2">
           {/* Phone row */}
           <div className="flex items-center justify-between text-xs text-zinc-400 hover:text-white transition-all">
-            <div 
-              className="flex items-center gap-2 truncate cursor-pointer hover:underline decoration-orange-500/40"
-                onClick={() => hasPhone && copyToClipboard(sanitizedLead.phone, 'phone')}
+            <button
+              type="button"
+              className="flex min-w-0 items-center gap-2 truncate text-left cursor-pointer hover:underline decoration-orange-500/40 disabled:cursor-not-allowed"
+              onClick={() => hasPhone && copyToClipboard(sanitizedLead.phone, 'phone')}
+              disabled={!hasPhone}
               title={hasPhone ? 'Click to copy phone & set Contacted' : 'No phone number was returned by the provider'}
+              aria-label={hasPhone ? `Copy phone number ${sanitizedLead.phone}` : 'Phone number unavailable'}
             >
               <Phone className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
               <span className="font-mono truncate select-all">{sanitizedLead.phone}</span>
-            </div>
-            <button
-              onClick={() => hasPhone && copyToClipboard(sanitizedLead.phone, 'phone')}
+            </button>
+              <button
+                type="button"
+                aria-label={hasPhone ? 'Copy phone number' : 'Phone number unavailable'}
+                onClick={() => hasPhone && copyToClipboard(sanitizedLead.phone, 'phone')}
               disabled={!hasPhone}
               className="text-zinc-500 hover:text-orange-400 p-1 shrink-0 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               title={hasPhone ? 'Copy Phone & set Contacted' : 'No phone number was returned by the provider'}
@@ -253,16 +269,19 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
 
           {/* Email row */}
           <div className="flex items-center justify-between text-xs text-zinc-400 hover:text-white transition-all">
-            <div 
-              className="flex items-center gap-2 truncate cursor-pointer hover:underline decoration-orange-500/40"
+            <button
+              type="button"
+              className="flex min-w-0 items-center gap-2 truncate text-left cursor-pointer hover:underline decoration-orange-500/40 disabled:cursor-not-allowed"
               onClick={() => hasEmail && copyToClipboard(sanitizedLead.email, 'email')}
+              disabled={!hasEmail}
               title={hasEmail ? 'Click to copy email & set Contacted' : 'Email was not returned by the provider'}
+              aria-label={hasEmail ? `Copy email address ${sanitizedLead.email}` : 'Email address unavailable'}
             >
               <Mail className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
               <span className="truncate font-mono select-all">
                 {sanitizedLead.email}
               </span>
-            </div>
+            </button>
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
@@ -274,6 +293,8 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
                 <span>{refreshingProvider ? 'Refreshing...' : 'Refresh provider'}</span>
               </button>
               <button
+                type="button"
+                aria-label={hasEmail ? 'Copy email address' : 'Email address unavailable'}
                 onClick={() => hasEmail && copyToClipboard(sanitizedLead.email, 'email')}
                 disabled={!hasEmail}
                 className="text-zinc-500 hover:text-orange-400 p-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -345,10 +366,13 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
         {/* Action Controls */}
         <div className="space-y-2.5">
           {/* Direct status selection switcher */}
+          <label className="sr-only" htmlFor={`lead-status-${lead.id}`}>Update status for {lead.name}</label>
           <select
+            id={`lead-status-${lead.id}`}
+            aria-label={`Update status for ${lead.name}`}
             value={lead.status}
             onChange={(e) => onStatusChange(lead.id, e.target.value as LeadStatus)}
-            className="text-xs bg-zinc-950 text-zinc-350 font-medium py-1.5 px-2 rounded-lg border border-zinc-800 focus:outline-hidden hover:bg-zinc-900 w-full transition-colors"
+            className="text-xs bg-zinc-950 text-zinc-400 font-medium py-1.5 px-2 rounded-lg border border-zinc-800 focus:outline-hidden hover:bg-zinc-900 w-full transition-colors"
           >
             <option value="new">🆕 New Lead</option>
             <option value="contacted">📞 Contacted</option>
@@ -360,17 +384,18 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
 
           {/* Dual buttons row: Quick Call and Outreach AI */}
           <div className="flex items-center gap-2 w-full">
-            <a 
+            <a
+              aria-disabled={!hasPhone}
               href={hasPhone ? `tel:${sanitizedLead.phone}` : undefined}
               onClick={hasPhone ? handleContactAction : undefined}
-              aria-disabled={!hasPhone}
-              className="bg-zinc-950 hover:bg-zinc-900 hover:border-zinc-700 text-orange-400 border border-zinc-800 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 flex-1 transition-colors cursor-pointer"
+              className={`bg-zinc-950 hover:bg-zinc-900 hover:border-zinc-700 text-orange-400 border border-zinc-800 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 flex-1 transition-colors cursor-pointer ${!hasPhone ? 'pointer-events-none opacity-50' : ''}`}
               title={hasPhone ? `Quick Call ${sanitizedLead.phone}` : 'No phone number was returned by the provider'}
             >
               <Phone className="h-3.5 w-3.5 shrink-0 text-orange-400/80" />
               <span>Quick Call</span>
             </a>
             <button
+              type="button"
               onClick={() => onSelect(lead)}
               className="bg-orange-500 hover:bg-orange-600 text-zinc-950 px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shrink-0 cursor-pointer"
             >

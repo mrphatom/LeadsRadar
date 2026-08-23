@@ -578,7 +578,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
           </div>
           <button 
             onClick={onClose}
-            className="text-zinc-400 hover:text-white bg-zinc-905 p-2 rounded-lg cursor-pointer transition-colors border border-zinc-800"
+            className="text-zinc-400 hover:text-white bg-zinc-900 p-2 rounded-lg cursor-pointer transition-colors border border-zinc-800"
           >
             <X className="h-5 w-5" />
           </button>
@@ -587,7 +587,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         {/* Info Strip */}
         <div className="bg-zinc-950/50 border-b border-zinc-800 px-6 py-4 space-y-3 shrink-0 text-sm">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex items-center gap-2 text-zinc-350">
+            <div className="flex items-center gap-2 text-zinc-400">
               <Building2 className="h-4.5 w-4.5 text-orange-500 shrink-0" />
               <span className="font-semibold text-white truncate">{lead.category}</span>
               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 rounded-md" title="Source provenance is shown separately from current truth or contact permission">
@@ -614,7 +614,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
               className={`flex items-center gap-2 transition-colors ${
                 lead.phone.includes('No public phone')
                   ? 'text-zinc-500 italic cursor-default'
-                  : 'text-zinc-350 hover:text-orange-400 cursor-pointer group/item'
+                  : 'text-zinc-400 hover:text-orange-400 cursor-pointer group/item'
               }`}
               title="Click to copy & set Contacted status"
             >
@@ -750,7 +750,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                 className={`pb-3 text-xs md:text-sm font-semibold border-b-2 px-3 md:px-4 flex items-center gap-2 cursor-pointer transition-colors ${
                   activeTab === 'assistant'
                     ? 'border-orange-500 text-orange-400 font-bold'
-                    : 'border-transparent text-zinc-550 hover:text-orange-400'
+                    : 'border-transparent text-zinc-500 hover:text-orange-400'
                 }`}
               >
                 <Bot className="h-4 w-4" />
@@ -818,7 +818,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                             setShowPitchDeck(true);
                           }
                         }}
-                        className="bg-zinc-900 hover:bg-zinc-850 text-orange-400 border border-orange-500/30 font-bold px-3.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 cursor-pointer self-stretch sm:self-auto justify-center transition-all"
+                        className="bg-zinc-900 hover:bg-zinc-800 text-orange-400 border border-orange-500/30 font-bold px-3.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 cursor-pointer self-stretch sm:self-auto justify-center transition-all"
                       >
                         {!isPro ? <Lock className="h-3 w-3 text-zinc-500" /> : <Sparkles className="h-3.5 w-3.5 fill-current" />}
                         Open Slideshow Deck
@@ -898,7 +898,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
                     {/* ENHANCEMENT 3: Interactive Editable Email with Clippable Pain Points */}
                     <div className="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-xs">
-                      <div className="bg-zinc-900 px-4 py-3 border-b border-zinc-850 flex items-center justify-between flex-wrap gap-2">
+                      <div className="bg-zinc-900 px-4 py-3 border-b border-zinc-800 flex items-center justify-between flex-wrap gap-2">
                         <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
                           <Mail className="h-3.5 w-3.5 text-zinc-500" /> B2B Pitch Email Composer
                         </span>
@@ -956,8 +956,8 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       </div>
 
                       {/* ENHANCEMENT 3B: Clickable "Pain Point" Tags */}
-                      <div className="bg-zinc-900/60 p-3.5 border-b border-zinc-850 space-y-2">
-                        <span className="text-[10px] text-zinc-450 font-bold block uppercase font-mono tracking-wider flex items-center gap-1 text-zinc-500">
+                      <div className="bg-zinc-900/60 p-3.5 border-b border-zinc-800 space-y-2">
+                        <span className="text-[10px] text-zinc-400 font-bold block uppercase font-mono tracking-wider flex items-center gap-1 text-zinc-500">
                           Optional hypothesis templates — insert only after your own observation:
                         </span>
                         <div className="flex flex-wrap gap-1.5">
@@ -1006,7 +1006,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                     </div>
 
                     {/* ENHANCEMENT 4: Live Objections Rebuttals Library sidebar */}
-                    <div className="bg-zinc-950 border border-zinc-850 p-4 rounded-2xl space-y-3.5">
+                    <div className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl space-y-3.5">
                       <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
                         <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                           <Bot className="h-4 w-4 text-orange-500" /> Live Objections Rebuttal Library
@@ -1023,7 +1023,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                           { objection: "\"We rely solely on Word-of-Mouth\"", response: "\"That may work well for your business. Would you like to discuss whether an online information or booking experience could support that approach?\"" },
                           { objection: "\"Call back after high season\"", response: "\"Of course. What date or condition should I use for a follow-up? I will only contact you again if that timing is welcome.\"" }
                         ].map((rob, rid) => (
-                          <div key={rid} className="bg-zinc-900 p-3 rounded-xl border border-zinc-850 space-y-1.5 text-xs">
+                          <div key={rid} className="bg-zinc-900 p-3 rounded-xl border border-zinc-800 space-y-1.5 text-xs">
                             <span className="font-bold text-orange-400 font-mono block">{rob.objection}</span>
                             <p className="text-zinc-300 italic">"{rob.response}"</p>
                             <button
@@ -1066,7 +1066,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         </div>
                       ) : (
                         <div className="space-y-3.5">
-                          <label className="flex items-center gap-2.5 bg-zinc-900 p-3.5 rounded-xl border border-zinc-850 cursor-pointer select-none">
+                          <label className="flex items-center gap-2.5 bg-zinc-900 p-3.5 rounded-xl border border-zinc-800 cursor-pointer select-none">
                             <input
                               type="checkbox"
                               checked={followupEnabled}
@@ -1080,7 +1080,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                           </label>
 
                           {followupEnabled && (
-                            <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 border-dashed space-y-3 animate-fadeIn border-zinc-705">
+                            <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 border-dashed space-y-3 animate-fadeIn border-zinc-700">
                               <span className="text-[10px] text-orange-400 font-bold font-mono tracking-widest block uppercase">Optional follow-up template — send only with permission:</span>
                               <div className="font-mono text-[11px] p-3 rounded-lg bg-zinc-950 text-zinc-400 space-y-2 border border-zinc-900 select-text">
                                 <p className="font-bold text-zinc-300">Subject: Follow-up for {lead.name}</p>
@@ -1125,7 +1125,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                           </div>
                         ) : (
                           <div className="space-y-4 font-sans">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-900/40 p-3 rounded-xl border border-zinc-850">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800">
                               <div>
                                 <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">Campaign Dispatch Status</span>
                                 <span className="text-xs font-extrabold text-white mt-0.5 flex items-center gap-1">
@@ -1159,7 +1159,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                             )}
 
                             {replyData && !replyData.hasReply && (
-                              <div className="text-xs font-medium text-zinc-500 bg-zinc-900/30 p-3.5 rounded-xl border border-zinc-850/60 text-center">
+                              <div className="text-xs font-medium text-zinc-500 bg-zinc-900/30 p-3.5 rounded-xl border border-zinc-800/60 text-center">
                                 No reply returned by Gmail for <strong className="text-zinc-400 select-all">{lead.email}</strong> yet. Verify the mailbox and recipient address if you expected a response.
                               </div>
                             )}
@@ -1173,7 +1173,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
                                 <div className="space-y-1.5">
                                   <span className="text-[10px] text-zinc-500 font-mono block uppercase">Received Gmail message snippet:</span>
-                                  <p className="bg-zinc-950 text-zinc-300 p-3 rounded-xl border border-zinc-850 font-sans leading-relaxed text-xs italic leading-relaxed">
+                                  <p className="bg-zinc-950 text-zinc-300 p-3 rounded-xl border border-zinc-800 font-sans leading-relaxed text-xs italic leading-relaxed">
                                     "{replyData.replySnippet}"
                                   </p>
                                 </div>
@@ -1198,13 +1198,13 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                                       placeholder="Reply Subject"
                                       value={replySubject}
                                       onChange={(e) => setReplySubject(e.target.value)}
-                                      className="w-full text-xs font-mono py-1.5 px-2.5 rounded-lg border border-zinc-805 bg-zinc-950 text-zinc-250 focus:outline-hidden"
+                                      className="w-full text-xs font-mono py-1.5 px-2.5 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-300 focus:outline-hidden"
                                     />
                                     <textarea
                                       rows={5}
                                       value={replyBody}
                                       onChange={(e) => setReplyBody(e.target.value)}
-                                      className="w-full text-xs font-mono p-3 rounded-xl border border-zinc-805 bg-zinc-950 text-zinc-305 focus:outline-hidden leading-relaxed"
+                                      className="w-full text-xs font-mono p-3 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 focus:outline-hidden leading-relaxed"
                                     />
                                   </div>
 
@@ -1248,7 +1248,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
                     {/* Cold calling script */}
                     <div className="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-xs">
-                      <div className="bg-zinc-900 px-4 py-3 border-b border-zinc-850 flex items-center justify-between">
+                      <div className="bg-zinc-900 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
                         <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
                           <Phone className="h-3.5 w-3.5 text-zinc-500" /> B2B Calling Pitch & Web-WhatsApp
                         </span>
@@ -1306,7 +1306,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {lead.outreachScript.suggestedFeatures.map((item, index) => (
-                          <div key={index} className="flex items-start gap-2.5 bg-zinc-950 p-3 rounded-xl border border-zinc-850">
+                          <div key={index} className="flex items-start gap-2.5 bg-zinc-950 p-3 rounded-xl border border-zinc-800">
                             <CheckSquare className="h-4.5 w-4.5 text-orange-500 mt-0.5 shrink-0" />
                             <div>
                               <span className="text-xs font-semibold text-white block">Feature {index + 1}</span>
@@ -1346,7 +1346,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       value={logMessage}
                       onChange={(e) => setLogMessage(e.target.value)}
                       placeholder="e.g. Discussed mobile landing page with owners, scheduled visual call for next Wednesday..."
-                      className="w-full text-xs p-3.5 rounded-lg border border-zinc-800 bg-zinc-900 min-h-[70px] focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 text-zinc-200 placeholder:text-zinc-655"
+                      className="w-full text-xs p-3.5 rounded-lg border border-zinc-800 bg-zinc-900 min-h-[70px] focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 text-zinc-200 placeholder:text-zinc-600"
                       required
                     />
 
@@ -1445,7 +1445,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                     onClick={onUpgradeClick}
                     className="bg-orange-500 hover:bg-orange-600 shadow-md shadow-orange-500/10 font-extrabold text-zinc-950 px-4 py-2 rounded-lg text-xs tracking-wide uppercase transition-all inline-flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Zap className="h-3.5 w-3.5 fill-current" /> Start 3-day Free Trial
+                    <Zap className="h-3.5 w-3.5 fill-current" /> Upgrade with MoonPay
                   </button>
                 </div>
               ) : (
@@ -1487,19 +1487,19 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       
                       {/* SEO Metrics Grid */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-xl">
+                        <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
                           <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Traffic measurement</span>
                           <span className="text-xs text-white font-bold block mt-1">Not measured</span>
                         </div>
-                        <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-xl col-span-1">
+                        <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl col-span-1">
                           <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Revenue measurement</span>
                           <span className="text-xs text-orange-400 font-bold block mt-1">Not measured</span>
                         </div>
-                        <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-xl">
+                        <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
                           <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Competitor evidence</span>
                           <span className="text-xs text-white font-bold block mt-1">Not measured</span>
                         </div>
-                        <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-xl">
+                        <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
                           <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Ranking evidence</span>
                           <span className="text-xs text-emerald-400 font-bold block mt-1">Not measured</span>
                         </div>
@@ -1510,28 +1510,28 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Generated strategy hypotheses</label>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                           {/* Strengths */}
-                          <div className="bg-zinc-950 border-l-4 border-emerald-500 p-4 rounded-xl border border-zinc-850/80">
+                          <div className="bg-zinc-950 border-l-4 border-emerald-500 p-4 rounded-xl border border-zinc-800/80">
                             <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">💪 Strengths</span>
                             <ul className="list-disc pl-4 space-y-1 text-xs text-zinc-300 mt-2">
                               {lead.analysis.swot.strengths.map((item, idx) => <li key={idx}>{item}</li>)}
                             </ul>
                           </div>
                           {/* Weaknesses */}
-                          <div className="bg-zinc-950 border-l-4 border-red-500 p-4 rounded-xl border border-zinc-850/80">
+                          <div className="bg-zinc-950 border-l-4 border-red-500 p-4 rounded-xl border border-zinc-800/80">
                             <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider">⚠️ Weaknesses</span>
                             <ul className="list-disc pl-4 space-y-1 text-xs text-zinc-300 mt-2">
                               {lead.analysis.swot.weaknesses.map((item, idx) => <li key={idx}>{item}</li>)}
                             </ul>
                           </div>
                           {/* Opportunities */}
-                          <div className="bg-zinc-950 border-l-4 border-blue-500 p-4 rounded-xl border border-zinc-850/80">
+                          <div className="bg-zinc-950 border-l-4 border-blue-500 p-4 rounded-xl border border-zinc-800/80">
                             <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">🚀 Opportunities</span>
                             <ul className="list-disc pl-4 space-y-1 text-xs text-zinc-300 mt-2">
                               {lead.analysis.swot.opportunities.map((item, idx) => <li key={idx}>{item}</li>)}
                             </ul>
                           </div>
                           {/* Threats */}
-                          <div className="bg-zinc-950 border-l-4 border-purple-500 p-4 rounded-xl border border-zinc-850/80">
+                          <div className="bg-zinc-950 border-l-4 border-purple-500 p-4 rounded-xl border border-zinc-800/80">
                             <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">⚡ Threats</span>
                             <ul className="list-disc pl-4 space-y-1 text-xs text-zinc-300 mt-2">
                               {lead.analysis.swot.threats.map((item, idx) => <li key={idx}>{item}</li>)}
@@ -1541,7 +1541,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       </div>
 
                       {/* Digital strategy guidance */}
-                      <div className="bg-zinc-950 border border-zinc-850 rounded-2xl p-4">
+                      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
                         <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2.5">
                           Digital Outreach Priority Strategy
                         </h4>
@@ -1581,11 +1581,11 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                     onClick={onUpgradeClick}
                     className="bg-orange-500 hover:bg-orange-600 shadow-md shadow-orange-500/10 font-extrabold text-zinc-950 px-4 py-2 rounded-lg text-xs tracking-wide uppercase transition-all inline-flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Zap className="h-3.5 w-3.5 fill-current" /> Start 3-day Free Trial
+                    <Zap className="h-3.5 w-3.5 fill-current" /> Upgrade with MoonPay
                   </button>
                 </div>
               ) : (
-                <div className="space-y-4 animate-fadeIn flex flex-col h-[420px] bg-zinc-950 rounded-2xl border border-zinc-850 p-4.5">
+                <div className="space-y-4 animate-fadeIn flex flex-col h-[420px] bg-zinc-950 rounded-2xl border border-zinc-800 p-4.5">
                   
                   {/* Message Log */}
                   <div className="flex-1 overflow-y-auto space-y-3.5 pr-2 select-text text-xs scrollbar-thin scrollbar-thumb-zinc-800">
@@ -1597,7 +1597,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         <div className={`p-1.5 rounded-lg shrink-0 h-fit ${m.role === 'user' ? 'bg-zinc-800 text-zinc-300' : 'bg-orange-500/10 border border-orange-500/20 text-orange-400'}`}>
                           {m.role === 'user' ? <UserCheck className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
                         </div>
-                        <div className={`p-3 rounded-2xl leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-zinc-900 border border-zinc-800 text-zinc-200' : 'bg-zinc-950 border border-zinc-850 text-zinc-300'}`}>
+                        <div className={`p-3 rounded-2xl leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-zinc-900 border border-zinc-800 text-zinc-200' : 'bg-zinc-950 border border-zinc-800 text-zinc-300'}`}>
                           {m.text}
                         </div>
                       </div>
@@ -1607,7 +1607,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         <div className="p-1.5 rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/20 shrink-0">
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         </div>
-                        <div className="p-3 rounded-2xl bg-zinc-950 border border-zinc-850 text-zinc-500 font-mono text-[10px]">
+                        <div className="p-3 rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-500 font-mono text-[10px]">
                           Coach is strategizing objection tactics...
                         </div>
                       </div>
@@ -1615,13 +1615,13 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                   </div>
 
                   {/* Input form */}
-                  <form onSubmit={handleSendChatMessage} className="flex gap-2 border-t border-zinc-850 pt-3">
+                  <form onSubmit={handleSendChatMessage} className="flex gap-2 border-t border-zinc-800 pt-3">
                     <input
                       type="text"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       placeholder="Ask the coach: 'Owner says they are too busy' or 'Draft a phone rebuttal'..."
-                      className="flex-1 bg-zinc-900 text-xs text-zinc-200 placeholder:text-zinc-650 rounded-xl px-3.5 py-2.5 border border-zinc-800 focus:outline-hidden focus:ring-1 focus:ring-orange-500/40"
+                      className="flex-1 bg-zinc-900 text-xs text-zinc-200 placeholder:text-zinc-600 rounded-xl px-3.5 py-2.5 border border-zinc-800 focus:outline-hidden focus:ring-1 focus:ring-orange-500/40"
                     />
                     <button
                       type="submit"
@@ -1748,7 +1748,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         }
                       }
                     }}
-                    className="flex-1 bg-zinc-900 border border-zinc-800 text-xs px-2.5 py-1.5 rounded-lg text-zinc-200 placeholder:text-zinc-650 focus:outline-hidden focus:border-zinc-700"
+                    className="flex-1 bg-zinc-900 border border-zinc-800 text-xs px-2.5 py-1.5 rounded-lg text-zinc-200 placeholder:text-zinc-600 focus:outline-hidden focus:border-zinc-700"
                   />
                   <button
                     type="button"
@@ -1760,7 +1760,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         inputEl.value = '';
                       }
                     }}
-                    className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 text-zinc-300 px-2.5 py-1 text-xs rounded-lg cursor-pointer transition-colors"
+                    className="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 px-2.5 py-1 text-xs rounded-lg cursor-pointer transition-colors"
                   >
                     Add
                   </button>
@@ -1809,7 +1809,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
               <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2.5">
                 Discovery Agent Notes
               </h3>
-              <div className="bg-zinc-900 p-3.5 rounded-xl border border-zinc-800 text-zinc-350 leading-relaxed text-xs">
+              <div className="bg-zinc-900 p-3.5 rounded-xl border border-zinc-800 text-zinc-400 leading-relaxed text-xs">
                 <div className="font-semibold text-red-400 flex items-center gap-1 mb-1 bg-red-500/10 px-2 py-0.5 rounded-md w-fit">
                   Webless Issue Identifiers
                 </div>
@@ -1822,7 +1822,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
               <a
                 href={`tel:${lead.phone}`}
                 onClick={() => handleContactAction(false)}
-                className="flex-1 bg-zinc-900 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
               >
                 <Phone className="h-4 w-4 text-zinc-500" />
                 Call Client
@@ -1830,7 +1830,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
               <a
                 href={lead.outreachScript ? `mailto:${lead.email}?subject=${encodeURIComponent(lead.outreachScript.emailSubject)}&body=${encodeURIComponent(lead.outreachScript.emailBody)}` : `mailto:${lead.email}`}
                 onClick={() => handleContactAction(false)}
-                className="flex-1 bg-orange-500 hover:bg-orange-600 text-zinc-955 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                className="flex-1 bg-orange-500 hover:bg-orange-600 text-zinc-950 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
               >
                 <Mail className="h-4 w-4" />
                 {lead.outreachScript ? 'Send Pitch' : 'Send Email'}

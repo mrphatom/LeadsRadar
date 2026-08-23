@@ -100,7 +100,7 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
               <select
                 value={country}
                 onChange={(e) => setCountry(e.target.value as CountryType)}
-                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-350 focus:outline-hidden"
+                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 focus:outline-hidden"
               >
                 <option value="USA">USA 🇺🇸</option>
                 <option value="UK">UK 🇬🇧</option>
@@ -148,7 +148,7 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-350 focus:outline-hidden"
+                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 focus:outline-hidden"
               >
                 <option value="Bakery" className="bg-zinc-950 text-zinc-200">Bakery</option>
                 <option value="Dentist" className="bg-zinc-950 text-zinc-200">Dentist</option>
@@ -186,7 +186,7 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="e.g. +1 (206) 555-1234"
-                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-655"
+                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-600"
               />
               <p className="text-[10px] text-zinc-600 mt-1">Optional. Leave blank when no public number is known.</p>
             </div>
@@ -201,7 +201,7 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="e.g. public-contact@business.com"
-                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-655"
+                className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-600"
               />
             </div>
           </div>
