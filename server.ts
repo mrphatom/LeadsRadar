@@ -120,90 +120,6 @@ try {
 
 const hasApiKey = !!process.env.GEMINI_API_KEY;
 
-// Mock backup leads for offline/demo/fallback mode
-const fallbackLeads = [
-  {
-    name: "Golden Grain Bakery",
-    country: "USA",
-    city: "Austin",
-    address: "1402 S Congress Ave, Austin, TX 78704",
-    category: "Bakery",
-    phone: "+1 (512) 555-0143",
-    email: "info@goldengrainaustin.local",
-    notes: "A beloved local sourdough bakery with strong foot traffic but only a Yelp page with no online ordering or menu."
-  },
-  {
-    name: "Schulz Kfz-Meisterbetrieb",
-    country: "Germany",
-    city: "Munich",
-    address: "Dachauer Str. 182, 80992 München",
-    category: "Auto Mechanic",
-    phone: "+49 89 55518290",
-    email: "kontakt@schulz-kfz.local",
-    notes: "Independent BMW/Audi specialist. Fully-booked through local reputation, looking to systematize client intake and list pricing online."
-  },
-  {
-    name: "Maple Ridge Plumbing",
-    country: "Canada",
-    city: "Toronto",
-    address: "421 Bay St, Toronto, ON M5H 2Y4",
-    category: "Plumbing",
-    phone: "+1 (416) 555-8931",
-    email: "service@mapleridgeplumbing.local",
-    notes: "Family-owned emergency repair plumbers. Doing well but struggling to rank in local Google Search against competitors with SEO-optimized sites."
-  },
-  {
-    name: "Oxford Garden Care",
-    country: "UK",
-    city: "Oxford",
-    address: "94 Banbury Rd, Oxford OX2 6JT",
-    category: "Landscaping",
-    phone: "+44 1865 559401",
-    email: "hello@oxfordgardens.local",
-    notes: "Premium garden design and hedge pruning services. Currently relies on flyers and local community boards. Needs a portfolio website to showcase work."
-  },
-  {
-    name: "Harbor Light Cafe",
-    country: "USA",
-    city: "Seattle",
-    address: "2201 Westlake Ave, Seattle, WA 98121",
-    category: "Cafe",
-    phone: "+1 (206) 555-3211",
-    email: "contact@harborlightcafe.local",
-    notes: "Charming neighborhood espresso and brunch spot with high Google Reviews but no website. Menu is only viewable in static user photo uploads."
-  },
-  {
-    name: "Bavarian Brew House",
-    country: "Germany",
-    city: "Munich",
-    address: "Rosenheimer Str. 45, 81667 München",
-    category: "Restaurant",
-    phone: "+49 89 55543210",
-    email: "servus@bavarianbrewhouse.local",
-    notes: "Traditional beer cellar with authentic food. Relying entirely on paper reservations. Needs digital table booking and PDF menu hosting."
-  },
-  {
-    name: "Canuck Roofing & Siding",
-    country: "Canada",
-    city: "Vancouver",
-    address: "1250 Hastings St, Vancouver, BC V6A 1S6",
-    category: "Roofing",
-    phone: "+1 (604) 555-9011",
-    email: "info@canuckroofing.local",
-    notes: "Residential reroofing team. Needs to gather high-value roofing replacement quotes through interactive lead funnels and request-a-quote forms."
-  },
-  {
-    name: "The London Barbershop",
-    country: "UK",
-    city: "London",
-    address: "88 Kingsland Rd, London E2 8DP",
-    category: "Barber",
-    phone: "+44 20 7555 9018",
-    email: "bookings@londonbarbers.local",
-    notes: "Vintage barbering and beard styling spot. Booking is done exclusively via phone calls or walk-ins. Needs custom web booking calendar."
-  }
-];
-
 // Verify or initialize Gemini
 let ai: GoogleGenAI | null = null;
 if (hasApiKey) {
@@ -361,7 +277,7 @@ app.post("/api/search-leads", validateBody(searchLeadsSchema), async (req, res) 
   const { country, city, category, platforms } = req.body;
 
   if (!country || !city || !category) {
-    return res.status(400).json({ error: "Country, city, and category are required." });
+    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'Country, city, and category are required.'));
   }
 
   const activePlatforms = Array.isArray(platforms) && platforms.length > 0
@@ -395,12 +311,12 @@ app.post("/api/search-leads", validateBody(searchLeadsSchema), async (req, res) 
 STRICT ZERO-HALLUCINATION POLICY:
 1. Every business MUST be a real, verifiable business currently operating in ${city}, ${country}. Never invent or fabricate business names.
 2. Verified Phone Number: Provide the real public telephone number formatted for dialling. If NO public phone number can be verified, return exactly "No public phone number found" in plain language.
-3. Contact Email Address: Search their public directory profile, Yelp, Google Maps description, Facebook page, or domain registry to find their public contact email address (e.g. info@businessname.com, contact@businessname.com, hello@...). Always return their professional business contact email address. Do not leave email blank or return "Email not publicly listed"; if a direct email is not explicitly printed in the snippet, derive their primary domain contact email (e.g., info@companydomain.com) so the outreach team can contact them immediately.
+3. Contact Email Address: Return a public business email only when it is explicitly printed in the cited source. If no public email can be verified, return exactly "Email not publicly listed". Never infer, derive, or guess an email address.
 4. LinkedIn Profile: Provide their real LinkedIn company or owner profile URL if publicly discoverable. If no LinkedIn profile is found, return exactly "LinkedIn profile not publicly listed".
 5. Social Media: In the "socials" object, return real public profile URLs or handles for facebook, instagram, and twitter if found. If a platform is not found, set its value to "Not publicly listed".
 6. Website Status: Describe their current web presence (e.g. "No official website - Google Maps / directory only", "Facebook page only", "Outdated or broken website").
 7. Source Platform: Indicate the primary platform where this business profile was found (e.g. one of: ${platformsStr}).
-8. Verification Score: An integer from 88 to 99 indicating data freshness and verification confidence.
+8. Verification Score: Return an evidence-based integer from 0 to 100. Use 0 when no grounding citation supports the record; do not inflate confidence.
 9. Notes: Factual description of what they do and why they need a modern landing page or booking portal.
 
 You MUST return the results strictly as a valid, parsable JSON array. Do not write markdown code blocks or extra formatting.
@@ -421,7 +337,7 @@ Structure:
       "twitter": "URL or 'Not publicly listed'"
     },
     "websiteStatus": "No official website - Google Maps / directory only",
-    "verified": true,
+    "verified": false,
     "sourcePlatform": "Google Maps",
     "verificationScore": 95,
     "notes": "Factual description of their missing online presence and why they can benefit from a website"
@@ -500,7 +416,7 @@ app.post("/api/enrich-lead", validateBody(enrichLeadSchema), async (req, res) =>
   const { name, city, country, category } = req.body;
 
   if (!name || !city || !country) {
-    return res.status(400).json({ error: "Business name, city, and country are required for enrichment." });
+    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'Business name, city, and country are required for enrichment.'));
   }
 
   if (!ai) {
@@ -541,7 +457,7 @@ Category/Niche: "${category || ''}"
 STRICT ZERO-HALLUCINATION REQUIREMENT:
 Search real-time web directories, Google Maps citations, LinkedIn, Facebook, Instagram, and local registries.
 1. verifiedPhone: Provide their real public telephone number. If no public phone exists, return exactly "No public phone number found".
-2. verifiedEmail: Search real-time web directories, Google Maps citations, LinkedIn, Facebook, Instagram, or domain registries to find their public contact email address. If a direct email is not explicitly printed in the snippet, derive their standard verified domain contact email (e.g., info@domain.com, contact@domain.com, owner@domain.com) so the outreach team has a reliable contact address. Never return "Email not publicly listed" or leave it unlisted.
+2. verifiedEmail: Return a public business email only when it is explicitly printed in a cited source. If no public email can be verified, return exactly "Email not publicly listed". Never infer, derive, or guess an email address.
 3. linkedin: Return their real LinkedIn company or owner profile URL if found. If not found, return exactly "LinkedIn profile not publicly listed".
 4. socials: Return real public URLs for facebook, instagram, and twitter if found. For any missing platform, return exactly "Not publicly listed".
 5. websiteStatus: Describe their web presence accurately (e.g. "No official website - Google Maps / directory only", "Facebook page only", or URL if found).
@@ -561,7 +477,7 @@ Return strictly a valid JSON object matching this schema without markdown code b
     "twitter": "URL or 'Not publicly listed'"
   },
   "websiteStatus": "...",
-  "verified": true,
+  "verified": false,
   "verificationSummary": "..."
 }`;
 
@@ -631,7 +547,7 @@ Return strictly a valid JSON object matching this schema without markdown code b
 app.post("/api/linkedin-intelligence", requirePro(() => db), validateBody(linkedinIntelligenceSchema), async (req, res) => {
   const { companyName, city, country, category } = req.body;
   if (!companyName) {
-    return res.status(400).json({ error: "companyName is required" });
+    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'companyName is required.'));
   }
 
   try {
@@ -703,7 +619,7 @@ IMPORTANT: Do not hallucinate private personal emails or unlisted phones. Only r
 app.post("/api/web-adaptability-check", requirePro(() => db), validateBody(webAdaptabilitySchema), async (req, res) => {
   const { leadId, name, city, country, category, websiteStatus } = req.body;
   if (!name) {
-    return res.status(400).json({ error: "name is required" });
+    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'name is required.'));
   }
 
   res.json({
@@ -913,7 +829,7 @@ app.post("/api/generate-pitch", requirePro(() => db), validateBody(generatePitch
   const { lead, variant = "direct", language = "English" } = req.body;
 
   if (!lead) {
-    return res.status(400).json({ error: "Lead object is required." });
+    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'Lead object is required.'));
   }
 
   if (!ai) {
@@ -982,25 +898,6 @@ Return strictly a valid raw JSON object matching the following Schema. Do not in
     res.json({ pitch: fallbackPitch, source: "synthetic-demo-fallback", warning: "Synthetic demo copy only; review every factual claim before sending." });
   }
 });
-
-function getValidPaystackEmail(inputEmail?: string): string {
-  if (!inputEmail || typeof inputEmail !== "string") {
-    return "billing@leadsradar.com";
-  }
-  const emailStr = inputEmail.trim();
-  // Paystack rejects .local, .test, .example, or domains without valid standard TLDs
-  if (
-    emailStr.endsWith(".local") ||
-    emailStr.endsWith(".test") ||
-    emailStr.endsWith(".example") ||
-    !emailStr.includes("@") ||
-    !/^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(emailStr)
-  ) {
-    const userPart = emailStr.split("@")[0] || "billing";
-    return `${userPart}@leadsradar.com`;
-  }
-  return emailStr;
-}
 
 // Create subscription Paystack checkout session (falls back to local sandbox in preview mode if secret missing or mismatched)
 app.post("/api/paystack/create-checkout-session", validateBody(checkoutSessionSchema), async (req, res) => {
@@ -1248,7 +1145,7 @@ app.post("/api/generate-analysis", requirePro(() => db), validateBody(generateAn
   const { lead } = req.body;
 
   if (!lead) {
-    return res.status(400).json({ error: "Lead object is required." });
+    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'Lead object is required.'));
   }
 
   const mockCompetitors = [
@@ -1305,7 +1202,7 @@ City: ${lead.city}
 Specific Context: ${lead.notes}
 
 Provide highly realistic estimations for regional search traffic loss and specific SWOT items.
-Also find or fabricate 3 actual or highly realistic top competitors for this business category in ${lead.city}, listing their web domains and the key digital advantage they have that our target lead is missing out on.
+Only include competitors that are explicitly supported by the available evidence. If competitor identities or domains cannot be verified, return an empty competitors array and explain that limitation; never invent, fabricate, or label realistic examples as actual competitors.
 
 Return strictly a valid raw JSON object. Do not include markdown wraps, ticks or text wrapping.
 Strict Schema:
@@ -1385,7 +1282,7 @@ app.post("/api/chat-assistant", requirePro(() => db), validateBody(chatAssistant
   const { lead, messages } = req.body;
 
   if (!lead || !messages) {
-    return res.status(400).json({ error: "Lead and messages parameters are required." });
+    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'Lead and messages parameters are required.'));
   }
 
   const systemInstruction = `You are "LeadCoach AI", a sharp, highly strategic B2B sales coach and local business marketing expert.
@@ -1471,7 +1368,7 @@ app.post("/api/gmail/connect", requirePro(() => db), validateBody(gmailConnectSc
   }
 });
 
-app.post("/api/gmail/disconnect", requirePro(() => db), validateBody(gmailDisconnectSchema), async (req, res) => {
+app.post("/api/gmail/disconnect", validateBody(gmailDisconnectSchema), async (req, res) => {
   const uid = requirePrincipal(req).uid;
   try {
     if (!db) throw new Error("Firestore server is not configured.");

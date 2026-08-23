@@ -717,7 +717,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
           )}
         </form>
       ) : (
-        /* TAB 2: WEEKLY AUTO-UPDATER DASHBOARD */
+        /* TAB 2: WEEKLY SCAN PLANNER */
         profile?.subscriptionTier !== 'pro' ? (
           <div className="bg-zinc-950/40 border border-orange-500/15 p-8 rounded-2xl text-center space-y-4 animate-fadeIn relative overflow-hidden">
             <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl" />
@@ -725,16 +725,16 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
               <Lock className="h-5 w-5 text-orange-400" />
             </div>
             <h3 className="text-white text-base font-extrabold flex items-center justify-center gap-1.5">
-              <Sparkles className="h-4.5 w-4.5 text-orange-500" /> Unlock Weekly Automated Radar Scans
+              <Sparkles className="h-4.5 w-4.5 text-orange-500" /> Unlock Weekly Scan Planning
             </h3>
             <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
-              Don't crawl manually every day. The automated coordinator scheduler automatically audits your chosen territories in the background and sends you lead alerts.
+              Prepare a repeatable territory scan plan and run it manually from this authenticated session. Persistent background jobs and alerts require a separate job service.
             </p>
             
             <div className="grid grid-cols-3 gap-3 max-w-sm mx-auto pt-2 text-[10px] font-mono">
               <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl">
-                <span className="text-zinc-500 block uppercase">Daemon</span>
-                <span className="text-white font-bold font-sans">Active (Weekly)</span>
+                <span className="text-zinc-500 block uppercase">Session Plan</span>
+                <span className="text-white font-bold font-sans">Manual</span>
               </div>
               <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl">
                 <span className="text-zinc-500 block uppercase">Pro Limit</span>
@@ -742,7 +742,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
               </div>
               <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl">
                 <span className="text-zinc-500 block uppercase">Alerts</span>
-                <span className="text-white font-bold font-sans">Enabled</span>
+                <span className="text-white font-bold font-sans">Not configured</span>
               </div>
             </div>
 
@@ -762,7 +762,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
             
             {/* Status indicators */}
             <div className="space-y-2">
-              <span className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Updater Status</span>
+              <span className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Planner Status</span>
               <div className="flex items-center gap-2">
                 <button 
                   type="button"
@@ -776,11 +776,11 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
                   }`} />
                 </button>
                 <span className="text-xs font-bold text-white">
-                  {schedulerActive ? "Active Daemon (Weekly Cron)" : "Paused"}
+                  {schedulerActive ? "Ready for manual run" : "Paused"}
                 </span>
               </div>
               <p className="text-[10px] text-zinc-500 leading-relaxed">
-                Applies weekly scans against selected regions to capture newer storefront entries.
+                Applies a manual scan against selected regions during this browser session.
               </p>
             </div>
 
@@ -793,11 +793,11 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-400">
                 <Calendar className="h-3.5 w-3.5 text-zinc-500" />
-                <span>Next Weekly Run: <strong>{nextSyncTime}</strong></span>
+                <span>Planned Next Run: <strong>{nextSyncTime}</strong></span>
               </div>
             </div>
 
-            {/* Background filtration info */}
+            {/* Planner filtration info */}
             <div className="space-y-1">
               <span className="block text-[10px] font-bold text-zinc-555 uppercase tracking-wider">Audit Profile Filters</span>
               <div className="text-xs space-y-1 text-zinc-300">
@@ -895,7 +895,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
                   className="flex-1 bg-white hover:bg-zinc-100 text-zinc-950 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:bg-zinc-805 disabled:text-zinc-500"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isSyncingAll ? 'animate-spin' : ''}`} />
-                  {isSyncingAll ? 'Running Sync Pipeline...' : 'Run Weekly Setup Sync Now'}
+                  {isSyncingAll ? 'Running Sync Pipeline...' : 'Run Manual Territory Sync'}
                 </button>
               </div>
             </div>

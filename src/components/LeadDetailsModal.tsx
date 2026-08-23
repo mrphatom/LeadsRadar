@@ -115,8 +115,6 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
   const [agencyName, setAgencyName] = useState('My Digital Agency');
 
   // Lead Enrichment state (Socials & Decision Maker)
-  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
-  const [enrichedData, setEnrichedData] = useState<{instagram?: string, facebook?: string, decisionMaker?: string} | null>(null);
 
   const triggerCopyNotice = (msg: string) => {
     setCopiedStatus(msg);
@@ -219,9 +217,19 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
           category: lead.category
         })
       });
-      const data = await resp.json();
       if (!resp.ok) {
-        throw new Error(data?.error || `HTTP error ${resp.status}`);
+        let message = `Contact enrichment failed with status ${resp.status}`;
+        try {
+          const errorData = await resp.json();
+          message = errorData?.error?.message || message;
+        } catch {
+          // Preserve the status-based error when the response is not JSON.
+        }
+        throw new Error(message);
+      }
+      const data = await resp.json();
+      if (!data?.enriched) {
+        throw new Error('Contact enrichment returned no lead data');
       }
       const enrichedLead = sanitizeLeadContact({
         ...lead,
@@ -229,12 +237,10 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         id: lead.id
       });
       onUpdateLead(enrichedLead);
-      triggerCopyNotice("Contact email & details verified!");
+      triggerCopyNotice("Contact details updated from provider response; verify before outreach.");
     } catch (err) {
-      console.warn("Contact enrichment fallback applied:", err);
-      const cleanLead = sanitizeLeadContact(lead);
-      onUpdateLead(cleanLead);
-      triggerCopyNotice("Resolved verified domain email!");
+      console.warn("Contact enrichment unavailable; existing lead data was preserved:", err);
+      triggerCopyNotice("Contact enrichment unavailable; existing data was preserved.");
     } finally {
       setFetchingEmail(false);
     }
@@ -1301,77 +1307,14 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                           <PlusCircle className="h-4 w-4 text-orange-500" /> Lead Enrichment & Social Finder
                         </span>
                         <span className="bg-orange-500/10 text-orange-400 border border-orange-500/20 text-[8px] font-extrabold uppercase font-mono px-1.5 py-0.5 rounded">
-                          AI Scraper {!isPro && '⭐'}
+                          Provider enrichment unavailable
                         </span>
                       </div>
 
-                      {!isPro ? (
-                        <div className="text-center py-2 text-xs text-zinc-500 font-sans space-y-2.5">
-                          <p>Analyze local databases to automatically find the business's Facebook & Instagram portals and reveal owner/manager names.</p>
-                          <button
-                            type="button"
-                            onClick={onUpgradeClick}
-                            className="bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 text-orange-400 font-bold px-3 py-1.5 rounded-lg text-[10px] inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <Lock className="h-3 w-3" /> Upgrade to Auto-Enrich Contacts
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="space-y-3.5">
-                          {!enrichedData ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                setEnrichmentLoading(true);
-                                await new Promise(resolve => setTimeout(resolve, 1400));
-                                const words = lead.name.split(' ');
-                                const likelyOwner = words.length > 1 && !words[0].toLowerCase().includes('the') && words[0].length > 3 ? `Mr./Ms. ${words[0]}` : "The Proprietor";
-                                setEnrichedData({
-                                  instagram: `https://instagram.com/${lead.name.replace(/\s+/g, '').toLowerCase()}`,
-                                  facebook: `https://facebook.com/${lead.name.replace(/\s+/g, '').toLowerCase()}`,
-                                  decisionMaker: likelyOwner
-                                });
-                                setEnrichmentLoading(false);
-                                triggerCopyNotice("Completed live scraping!");
-                              }}
-                              disabled={enrichmentLoading}
-                              className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer hover:border-orange-500/30 transition-all select-none"
-                            >
-                              {enrichmentLoading ? (
-                                <>
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" /> Connecting to Local Scrapers (Social & Web)...
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles className="h-4 w-4 text-orange-400" /> Deep Social Scraper & Scan Decision Maker
-                                </>
-                              )}
-                            </button>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 animate-fadeIn text-xs">
-                              <div className="p-3 bg-zinc-900 border border-zinc-850 rounded-xl space-y-1">
-                                <span className="text-[10px] text-zinc-500 font-bold font-mono block">Likely Brand Owner:</span>
-                                <span className="text-white font-black block">{enrichedData.decisionMaker}</span>
-                                <span className="text-[9px] text-orange-400 font-medium tracking-wide">AI Pattern Match</span>
-                              </div>
-                              <div className="p-3 bg-zinc-900 border border-zinc-850 rounded-xl space-y-1">
-                                <span className="text-[10px] text-zinc-500 font-bold font-mono block">Enriched Instagram:</span>
-                                <a href={enrichedData.instagram} target="_blank" rel="noreferrer" className="text-orange-400 flex items-center gap-1 font-bold underline">
-                                  Instagram Link <ExternalLink className="h-3 w-3" />
-                                </a>
-                                <span className="text-[9px] text-emerald-400 font-mono tracking-tight">Status: Active follower list</span>
-                              </div>
-                              <div className="p-3 bg-zinc-900 border border-zinc-850 rounded-xl space-y-1">
-                                <span className="text-[10px] text-zinc-500 font-bold font-mono block">Enriched Facebook:</span>
-                                <a href={enrichedData.facebook} target="_blank" rel="noreferrer" className="text-orange-400 flex items-center gap-1 font-bold underline">
-                                  Facebook Page <ExternalLink className="h-3 w-3" />
-                                </a>
-                                <span className="text-[9px] text-zinc-500 font-mono">No linked website catalog</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <div className="text-center py-2 text-xs text-zinc-500 font-sans space-y-2.5">
+                        <p>Social profile and decision-maker enrichment is not configured for this environment. Existing public links are shown only when returned by a provider.</p>
+                        <p className="text-[10px] text-orange-400">No owner identity, Facebook URL, or Instagram URL is inferred from the business name.</p>
+                      </div>
                     </div>
 
                     {/* Recommended design features */}

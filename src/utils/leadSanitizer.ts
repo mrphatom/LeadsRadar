@@ -83,11 +83,13 @@ export function sanitizeLeadContact(lead: BusinessLead): BusinessLead {
   const hasMissingContact = email === MISSING_EMAIL || phone === MISSING_PHONE;
   const dataQuality: LeadDataQuality = isSynthetic
     ? 'synthetic'
-    : lead.verified && !hasMissingContact
-      ? 'verified'
-      : hasMissingContact
-        ? 'unverified'
-        : 'provided';
+    : lead.dataQuality === 'unverified'
+      ? 'unverified'
+      : lead.verified && !hasMissingContact
+        ? 'verified'
+        : hasMissingContact
+          ? 'unverified'
+          : 'provided';
 
   return {
     ...lead,

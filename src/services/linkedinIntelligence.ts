@@ -1,4 +1,4 @@
-import { LinkedInCompanyIntelligence, LinkedInEmployeeContact, BusinessLead } from '../types';
+import { LinkedInCompanyIntelligence } from '../types';
 import { apiFetch } from '../apiClient';
 
 export async function fetchLinkedInIntelligence(
@@ -29,44 +29,23 @@ export async function fetchLinkedInIntelligence(
     }
     throw new Error('Invalid response structure from LinkedIn Intelligence endpoint.');
   } catch (error) {
-    console.warn('LinkedIn intelligence API fetch error or rate limit. Serving verified heuristic profile:', error);
+    console.warn('LinkedIn intelligence provider unavailable; returning unverified state.', error);
     return getFallbackLinkedInIntelligence(leadName, city, category);
   }
 }
 
 export function getFallbackLinkedInIntelligence(
   companyName: string,
-  city: string,
+  _city: string,
   category: string
 ): LinkedInCompanyIntelligence {
-  const cleanName = companyName.trim() || 'Local Enterprise';
-  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-  
-  const sampleDecisionMakers: LinkedInEmployeeContact[] = [
-    {
-      name: 'Owner / Principal Manager',
-      role: 'Founder & Managing Owner',
-      department: 'Executive Leadership',
-      profileUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(cleanName + ' owner ' + city)}`,
-      verifiedStatus: 'Verified Active',
-    },
-    {
-      name: 'Operations & Marketing Lead',
-      role: 'Customer Experience / General Manager',
-      department: 'Operations',
-      profileUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(cleanName + ' manager ' + city)}`,
-      verifiedStatus: 'Estimated',
-    },
-  ];
-
   return {
-    companyName: cleanName,
-    linkedinUrl: `https://www.linkedin.com/company/${slug}`,
-    employeeCountRange: '2-10 employees',
-    industry: category || 'Local Services & Retail',
-    verifiedSocialFootprint: true,
-    keyDecisionMakers: sampleDecisionMakers,
+    companyName: companyName.trim() || 'Unidentified business',
+    employeeCountRange: 'Not publicly listed',
+    industry: category || 'Not publicly listed',
+    verifiedSocialFootprint: false,
+    keyDecisionMakers: [],
     lastAuditedAt: new Date().toISOString(),
-    summary: `Verified active professional footprint for ${cleanName} in ${city}. Business exhibits local decision-maker presence; direct founder outreach is recommended.`,
+    summary: 'LinkedIn data was not verified because the intelligence provider was unavailable.',
   };
 }

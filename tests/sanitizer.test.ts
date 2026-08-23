@@ -52,3 +52,24 @@ test('marks local seed contacts as synthetic even when fields look complete', ()
   assert.equal(result.verified, false);
   assert.equal(result.dataQuality, 'synthetic');
 });
+
+test('preserves explicit unverified provenance when contact data is present', () => {
+  const result = sanitizeLeadContact({
+    id: 'lead_456',
+    name: 'Provider Result',
+    country: 'USA',
+    city: 'Austin',
+    category: 'Bakery',
+    phone: '+1 (512) 555-0100',
+    email: 'contact@example.org',
+    status: 'new',
+    notes: '',
+    createdAt: new Date().toISOString(),
+    activityLog: [],
+    verified: false,
+    dataQuality: 'unverified',
+  });
+
+  assert.equal(result.verified, false);
+  assert.equal(result.dataQuality, 'unverified');
+});

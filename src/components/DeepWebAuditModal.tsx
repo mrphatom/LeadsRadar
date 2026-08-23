@@ -31,7 +31,7 @@ export default function DeepWebAuditModal({
       setLinkedinData(sanitized.linkedinIntelligence || null);
       setAdaptabilityData(sanitized.webAdaptability || null);
       setVerifiedEmail(sanitized.email);
-      setVerifiedPhone(sanitized.phone || '+1 (555) 019-2834');
+      setVerifiedPhone(sanitized.phone);
     }
   }, [isOpen, lead]);
 
@@ -53,11 +53,17 @@ export default function DeepWebAuditModal({
             country: lead.country,
             category: lead.category,
           }),
-        }).then((r) => r.json()).catch(() => null),
+        }).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Contact enrichment failed with status ${response.status}`);
+          }
+          return response.json();
+        }).catch(() => null),
       ]);
 
       const newEmail = sanitizeEmail(enrichResp?.enriched?.email || lead.email, lead.name);
       const newPhone = sanitizePhone(enrichResp?.enriched?.phone || lead.phone, lead.city);
+      const grounded = Array.isArray(enrichResp?.citations) && enrichResp.citations.length > 0;
 
       setLinkedinData(liResult);
       setAdaptabilityData(adaptResult);
@@ -71,30 +77,36 @@ export default function DeepWebAuditModal({
           phone: newPhone,
           linkedinIntelligence: liResult,
           webAdaptability: adaptResult,
-          verified: true,
-          verificationScore: 94,
-          verificationSummary: `Deep factual audit completed without hallucination. LinkedIn verified: ${liResult.keyDecisionMakers.length} decision makers. Verified direct contact email: ${newEmail}.`,
+          verified: grounded && liResult.verifiedSocialFootprint,
+          dataQuality: grounded && liResult.verifiedSocialFootprint ? 'verified' : 'unverified',
+          verificationScore: grounded && liResult.verifiedSocialFootprint ? 94 : 0,
+          verificationSummary: grounded && liResult.verifiedSocialFootprint
+            ? `Deep audit completed with provider evidence. LinkedIn decision makers returned: ${liResult.keyDecisionMakers.length}.`
+            : 'Deep audit completed without sufficient provider evidence to verify this business or its contacts.',
         }));
       }
     } catch (err) {
       console.warn('Deep audit fallback triggered:', err);
-      const cleanName = (lead.name || 'company').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const fallbackEmail = `info@${cleanName}.com`;
+      const fallbackEmail = sanitizeEmail(lead.email, lead.name);
+      const fallbackPhone = sanitizePhone(lead.phone, lead.city);
       const fallbackLi = getFallbackLinkedInIntelligence(lead.name, lead.city, lead.category);
       const fallbackAdapt = getFallbackWebAdaptability(lead);
       setLinkedinData(fallbackLi);
       setAdaptabilityData(fallbackAdapt);
       setVerifiedEmail(fallbackEmail);
+      setVerifiedPhone(fallbackPhone);
       if (onUpdateLead) {
-        onUpdateLead({
+        onUpdateLead(sanitizeLeadContact({
           ...lead,
           email: fallbackEmail,
+          phone: fallbackPhone,
           linkedinIntelligence: fallbackLi,
           webAdaptability: fallbackAdapt,
-          verified: true,
-          verificationScore: 91,
-          verificationSummary: `Deep factual audit verified via local business registry heuristics. Contact email resolved: ${fallbackEmail}.`,
-        });
+          verified: false,
+          dataQuality: 'unverified',
+          verificationScore: 0,
+          verificationSummary: 'Deep audit could not complete because one or more providers were unavailable. No contact details were fabricated.',
+        }));
       }
     } finally {
       setLoading(false);

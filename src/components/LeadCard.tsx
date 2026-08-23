@@ -85,7 +85,13 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
           category: lead.category
         })
       });
+      if (!resp.ok) {
+        throw new Error(`Contact enrichment failed with status ${resp.status}`);
+      }
       const data = await resp.json();
+      if (!data?.enriched) {
+        throw new Error('Contact enrichment returned no lead data');
+      }
       const enrichedLead = sanitizeLeadContact({
         ...lead,
         ...data?.enriched,
@@ -95,11 +101,7 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
         onUpdate(enrichedLead);
       }
     } catch (err) {
-      console.warn("Contact enrichment fallback applied:", err);
-      const cleanLead = sanitizeLeadContact(lead);
-      if (onUpdate) {
-        onUpdate(cleanLead);
-      }
+      console.warn("Contact enrichment unavailable; existing lead data was preserved:", err);
     } finally {
       setFetchingEmail(false);
     }
