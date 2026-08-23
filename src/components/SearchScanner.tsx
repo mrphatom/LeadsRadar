@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Search, Globe, MapPin, Building2, Loader2, Sparkles, 
   AlertCircle, CheckCircle2, History, Calendar, Clock, 
@@ -54,6 +54,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
   const [scannerTab, setScannerTab] = useState<'scan' | 'updater'>('scan');
   
   const isPro = profile?.subscriptionTier === 'pro';
+  const schedulerStorageKey = profile?.uid || 'anonymous';
   const maxQueries = isPro ? 20 : 10;
 
   // Compute total scans performed on current calendar day (UTC)
@@ -74,24 +75,23 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
   const [scanSource, setScanSource] = useState<string | null>(null);
 
   // Weekly Sync/Scheduler states
-  const [schedulerActive, setSchedulerActive] = useState<boolean>(true);
+  const [schedulerActive, setSchedulerActive] = useState<boolean>(false);
   const [onlyGoodReviews, setOnlyGoodReviews] = useState<boolean>(true);
   const [newlyAddedOnly, setNewlyAddedOnly] = useState<boolean>(true);
   const [selectedCities, setSelectedCities] = useState<string[]>(['Austin', 'London', 'Munich', 'Toronto']);
-  const [lastSyncTime, setLastSyncTime] = useState<string>(() => {
-    const saved = localStorage.getItem('radar_last_sync_time');
-    return saved || new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleString();
-  });
-  const [nextSyncTime, setNextSyncTime] = useState<string>(() => {
-    const saved = localStorage.getItem('radar_next_sync_time');
-    if (saved) return saved;
-    return new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toLocaleString(); // 4 days out
-  });
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [nextSyncTime, setNextSyncTime] = useState<string>('');
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [syncProgress, setSyncProgress] = useState<number>(0);
   const [isSyncingAll, setIsSyncingAll] = useState<boolean>(false);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['Google Maps', 'Yelp', 'LinkedIn', 'Trustpilot']);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!profile?.uid) return;
+    setLastSyncTime(localStorage.getItem(`radar_last_sync_time_${profile.uid}`) || '');
+    setNextSyncTime(localStorage.getItem(`radar_next_sync_time_${profile.uid}`) || '');
+  }, [profile?.uid]);
 
   const togglePlatform = (pId: string) => {
     if (selectedPlatforms.includes(pId)) {
@@ -273,7 +273,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       setSyncLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
     };
 
-    logging("Initializing Weekly Lead Update Automation Engine...");
+    logging("Preparing a manual weekly scan plan for this browser session...");
     await new Promise(r => setTimeout(r, 600));
     setSyncProgress(15);
 
@@ -324,7 +324,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
           if (data.leads && Array.isArray(data.leads) && data.leads.length > 0) {
             const markedLeads = data.leads.map(lead => ({
               ...lead,
-              notes: `${lead.notes} [Synced during Weekly Automated freshness scan on ${new Date().toLocaleDateString()}]`
+              notes: `${lead.notes} [Synced during manual freshness scan on ${new Date().toLocaleDateString()}]`
             }));
             onLeadsDiscovered(markedLeads, data.source || 'weekly-sync');
             logging(`[SAVED] Discovered and synced ${data.leads.length} premium prospects for ${currentCity}!`);
@@ -347,10 +347,10 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
     const nextStr = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleString();
     setLastSyncTime(nowStr);
     setNextSyncTime(nextStr);
-    localStorage.setItem('radar_last_sync_time', nowStr);
-    localStorage.setItem('radar_next_sync_time', nextStr);
+    localStorage.setItem(`radar_last_sync_time_${schedulerStorageKey}`, nowStr);
+    localStorage.setItem(`radar_next_sync_time_${schedulerStorageKey}`, nextStr);
 
-    logging(`Weekly update completed! Discovered ${totalAdded} freshly tracked prospects across active territories.`);
+    logging(`Manual update completed. Discovered ${totalAdded} prospects across active territories.`);
     await new Promise(r => setTimeout(r, 1500));
     setIsSyncingAll(false);
   };
@@ -367,7 +367,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
               AI Prospect Discovery Radar
             </h2>
             <p className="text-xs text-zinc-500 mt-1">
-              Crawl the active web to track brick-and-mortar storefronts lacking websites or auto-schedule weekly synchronized radar audits.
+              Discover public prospects and run manual territory scans. Persistent background scheduling requires a separately configured job service.
             </p>
           </div>
 
@@ -417,7 +417,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
             }`}
           >
             <Clock className="h-3.5 w-3.5" />
-            Weekly Auto-Updater
+            Weekly Scan Planner
           </button>
         </div>
       </div>

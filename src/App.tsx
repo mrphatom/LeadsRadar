@@ -40,6 +40,11 @@ function AppContent() {
   const [leads, setLeads] = useState<BusinessLead[]>([]);
   const [pastQueries, setPastQueries] = useState<any[]>([]);
   const [syncing, setSyncing] = useState<boolean>(true);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+
+  const reportPersistenceError = (message: string) => {
+    setPersistenceError(message);
+  };
   
   const [config, setConfig] = useState<{ hasApiKey: boolean; message: string }>({ hasApiKey: false, message: '' });
   
@@ -273,20 +278,21 @@ function AppContent() {
       };
     }));
 
-    // Proactively update local UI state instantly
+    const uniqueDiscoveries = formattedDiscoveries.filter((candidate, index, all) => {
+      const duplicateInCurrentState = leads.some((existing) =>
+        existing.name.trim().toLowerCase() === candidate.name.trim().toLowerCase()
+        || (candidate.phone && existing.phone === candidate.phone)
+      );
+      const duplicateInBatch = all.findIndex((item) =>
+        item.name.trim().toLowerCase() === candidate.name.trim().toLowerCase()
+        || (candidate.phone && item.phone === candidate.phone)
+      ) !== index;
+      return !duplicateInCurrentState && !duplicateInBatch;
+    });
+    const previousLeads = leads;
+
     setLeads(prev => {
-      const updated = [...prev];
-      formattedDiscoveries.forEach(fd => {
-        const alreadyListed = updated.some(l => 
-          l.name.toLowerCase() === fd.name.toLowerCase() || 
-          (l.phone && l.phone === fd.phone)
-        );
-        if (!alreadyListed) {
-          updated.push(fd);
-        }
-      });
-      // Sort newest first
-      updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const updated = [...uniqueDiscoveries, ...prev];
       try {
         localStorage.setItem(`fallback_leads_${user.uid}`, JSON.stringify(updated));
       } catch (e) {
@@ -297,13 +303,16 @@ function AppContent() {
 
     try {
       const batch = writeBatch(db);
-      formattedDiscoveries.forEach(fd => {
+      uniqueDiscoveries.forEach(fd => {
         const leadRef = doc(db, 'leads', fd.id);
         batch.set(leadRef, fd);
       });
       await batch.commit();
+      setPersistenceError(null);
     } catch (err) {
-      console.warn("Failed to batch save discoveries in Firestore, fallback local memory state preserved:", err);
+      setLeads(previousLeads);
+      reportPersistenceError('Discovery results could not be saved. Your changes were rolled back; please retry.');
+      console.warn("Failed to batch save discoveries in Firestore:", err);
     }
   };
 
@@ -321,22 +330,17 @@ function AppContent() {
       ownerId: user.uid
     };
 
-    // Proactively update local UI state instantly
-    setLeads(prev => {
-      const updated = [fullLead, ...prev];
-      try {
-        localStorage.setItem(`fallback_leads_${user.uid}`, JSON.stringify(updated));
-      } catch (e) {
-        console.warn("Failed to save manual lead locally:", e);
-      }
-      return updated;
-    });
+    const previousLeads = leads;
+    setLeads(prev => [fullLead, ...prev]);
 
     const leadRef = doc(db, 'leads', newLead.id);
     try {
       await setDoc(leadRef, fullLead);
+      setPersistenceError(null);
     } catch (err) {
-      console.warn("Failed to save manual lead inside remote Firestore, local state preserved:", err);
+      setLeads(previousLeads);
+      reportPersistenceError('Manual lead could not be saved. Your change was rolled back; please retry.');
+      console.warn("Failed to save manual lead inside remote Firestore:", err);
     }
   };
 
@@ -348,16 +352,9 @@ function AppContent() {
       ownerId: user.uid
     };
 
-    // Proactively update local UI state instantly
-    setLeads(prev => {
-      const updated = prev.map(l => l.id === updatedLead.id ? fullLead : l);
-      try {
-        localStorage.setItem(`fallback_leads_${user.uid}`, JSON.stringify(updated));
-      } catch (e) {
-        console.warn("Failed to save updated lead locally:", e);
-      }
-      return updated;
-    });
+    const previousLeads = leads;
+    const previousSelectedLead = selectedLead;
+    setLeads(prev => prev.map(l => l.id === updatedLead.id ? fullLead : l));
 
     if (selectedLead && selectedLead.id === updatedLead.id) {
       setSelectedLead(fullLead);
@@ -366,8 +363,12 @@ function AppContent() {
     const leadRef = doc(db, 'leads', updatedLead.id);
     try {
       await setDoc(leadRef, fullLead);
+      setPersistenceError(null);
     } catch (err) {
-      console.warn("Failed to commit lead update inside remote Firestore, local state preserved:", err);
+      setLeads(previousLeads);
+      setSelectedLead(previousSelectedLead);
+      reportPersistenceError('Lead changes could not be saved. Your change was rolled back; please retry.');
+      console.warn("Failed to commit lead update inside remote Firestore:", err);
     }
   };
 
@@ -391,16 +392,9 @@ function AppContent() {
       activityLog: [statusLogItem, ...leadToChange.activityLog]
     };
 
-    // Proactively update local UI state instantly
-    setLeads(prev => {
-      const updated = prev.map(l => l.id === leadId ? updatedLead : l);
-      try {
-        localStorage.setItem(`fallback_leads_${user.uid}`, JSON.stringify(updated));
-      } catch (e) {
-        console.warn("Failed to save lead status change locally:", e);
-      }
-      return updated;
-    });
+    const previousLeads = leads;
+    const previousSelectedLead = selectedLead;
+    setLeads(prev => prev.map(l => l.id === leadId ? updatedLead : l));
 
     if (selectedLead && selectedLead.id === leadId) {
       setSelectedLead(updatedLead);
@@ -409,8 +403,12 @@ function AppContent() {
     const leadRef = doc(db, 'leads', leadId);
     try {
       await setDoc(leadRef, updatedLead);
+      setPersistenceError(null);
     } catch (err) {
-      console.warn("Failed to set lead status status change in remote Firestore, local state preserved:", err);
+      setLeads(previousLeads);
+      setSelectedLead(previousSelectedLead);
+      reportPersistenceError('Status change could not be saved. Your change was rolled back; please retry.');
+      console.warn("Failed to set lead status change in remote Firestore:", err);
     }
   };
 
@@ -645,6 +643,14 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-300 transition-all selection:bg-orange-500/10 selection:text-orange-400 leading-normal font-sans">
+      {persistenceError && (
+        <div role="alert" className="fixed inset-x-0 top-0 z-[100] bg-rose-950/95 border-b border-rose-500/40 text-rose-100 px-4 py-2 text-xs text-center">
+          {persistenceError}
+          <button type="button" className="ml-3 underline hover:no-underline" onClick={() => setPersistenceError(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
       
       {/* Sleek Minimalist Sticky Navbar */}
       <header className="bg-zinc-950/80 backdrop-blur-md border-b border-zinc-900 sticky top-0 z-50 transition-all">

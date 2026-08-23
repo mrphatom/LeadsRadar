@@ -116,7 +116,7 @@ service cloud.firestore {
       return hasOnlyKeys(lead, [
           'id', 'ownerId', 'name', 'emailSent', 'country', 'city', 'address',
           'category', 'phone', 'email', 'linkedin', 'socials', 'websiteStatus',
-          'verified', 'verificationSummary', 'sourcePlatform', 'verificationScore',
+          'verified', 'dataQuality', 'verificationSummary', 'sourcePlatform', 'verificationScore',
           'status', 'notes', 'linkedinIntelligence', 'webAdaptability',
           'outreachScript', 'outreachScriptSource', 'createdAt', 'activityLog',
           'tags', 'analysis'
@@ -154,6 +154,7 @@ service cloud.firestore {
         && (!('socials' in lead) || lead.socials is map)
         && (!('websiteStatus' in lead) || (lead.websiteStatus is string && lead.websiteStatus.size() <= 500))
         && (!('verified' in lead) || lead.verified is bool)
+        && (!('dataQuality' in lead) || lead.dataQuality in ['verified', 'provided', 'unverified', 'synthetic'])
         && (!('verificationSummary' in lead) || (lead.verificationSummary is string && lead.verificationSummary.size() <= 2000))
         && (!('sourcePlatform' in lead) || (lead.sourcePlatform is string && lead.sourcePlatform.size() <= 128))
         && (!('verificationScore' in lead) || (lead.verificationScore is number && lead.verificationScore >= 0 && lead.verificationScore <= 100))

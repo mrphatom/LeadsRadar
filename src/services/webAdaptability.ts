@@ -26,21 +26,16 @@ export async function checkWebAdaptability(lead: BusinessLead): Promise<WebAdapt
     }
     throw new Error('Invalid adaptability response structure.');
   } catch (err) {
-    console.warn('Web adaptability API error or fallback triggered:', err);
+    console.warn('Web adaptability provider unavailable; returning unverified state.', err);
     return getFallbackWebAdaptability(lead);
   }
 }
 
-export function getFallbackWebAdaptability(lead: BusinessLead): WebAdaptabilityCheck {
-  const isNoWebsite = !lead.websiteStatus || lead.websiteStatus.toLowerCase().includes('no official');
-  
+export function getFallbackWebAdaptability(_lead: BusinessLead): WebAdaptabilityCheck {
   return {
     lastCheckedAt: new Date().toISOString(),
-    status: isNoWebsite ? 'Active Unchanged' : 'Web Changes Detected',
-    httpStatus: 200,
-    detectedChanges: isNoWebsite
-      ? ['No active custom domain detected.', 'Verified active on 3+ local directory listings.']
-      : ['Listing updated on Google Maps within last 30 days.', 'Social profile link active.'],
-    adaptabilityScore: 92,
+    status: 'Not checked',
+    detectedChanges: [],
+    adaptabilityScore: 0,
   };
 }

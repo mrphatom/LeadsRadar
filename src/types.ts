@@ -41,7 +41,7 @@ export interface LinkedInCompanyIntelligence {
 
 export interface WebAdaptabilityCheck {
   lastCheckedAt: string;
-  status: 'Active Unchanged' | 'Web Changes Detected' | 'Domain Recently Registered' | 'Offline / Unreachable';
+  status: 'Active Unchanged' | 'Web Changes Detected' | 'Domain Recently Registered' | 'Offline / Unreachable' | 'Not checked';
   httpStatus?: number;
   detectedChanges?: string[];
   adaptabilityScore: number;
@@ -88,6 +88,7 @@ export interface BusinessLead {
   };
   websiteStatus?: string;
   verified?: boolean;
+  dataQuality?: 'verified' | 'provided' | 'unverified' | 'synthetic';
   verificationSummary?: string;
   sourcePlatform?: string;
   verificationScore?: number;

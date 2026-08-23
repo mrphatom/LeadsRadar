@@ -15,6 +15,7 @@ import { errorHandler, logEvent, requestContext, requireAuth, requirePrincipal, 
 import { ApiError, isAllowedOrigin } from "./src/server/security.ts";
 import { createEncryptionService } from "./src/server/crypto.ts";
 import { isVerifiedPaystackTransaction, parsePaystackMetadata, verifyPaystackSignature } from "./src/server/payments.ts";
+import { sanitizeLeadContact } from "./src/utils/leadSanitizer.ts";
 import {
   chatAssistantSchema,
   checkoutSessionSchema,
@@ -38,6 +39,18 @@ if (runtimeConfig.isProduction && !process.env.GEMINI_API_KEY) {
 }
 
 const app = express();
+
+const PROVIDER_TIMEOUT_MS = 15_000;
+
+async function fetchWithTimeout(input: string | URL, init: RequestInit = {}, timeoutMs = PROVIDER_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 app.use(requestContext);
@@ -312,107 +325,35 @@ function generateDynamicMockLeads(city: string, country: string, category: strin
       name = `${prefix} ${tpl.namePrefix[(index + 3) % tpl.namePrefix.length]} ${displayCategory}`;
     }
 
-    const cleanNameForEmail = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const phoneNum = `${phonePrefix} ${phoneFormat}${Math.floor(Math.random() * 9000) + 1000}`;
-    const address = `${streetNum} ${street}, ${cleanCity}, ${country}`;
-    const sourcePlatform = activePlatforms[index % activePlatforms.length] || "Google Maps";
-    const verificationScore = Math.floor(Math.random() * 11) + 89; // 89 to 99
+    const sourcePlatform = activePlatforms[index % activePlatforms.length] || "Demo generator";
 
     return {
       name,
       country,
       city: cleanCity,
-      address,
+      address: "Not publicly listed",
       category: displayCategory,
-      phone: phoneNum,
-      email: `info@${cleanNameForEmail}.com`,
-      linkedin: `https://www.linkedin.com/company/${cleanNameForEmail}`,
+      phone: "No public phone number found",
+      email: "Email not publicly listed",
+      linkedin: "LinkedIn profile not publicly listed",
       socials: {
-        facebook: `https://facebook.com/${cleanNameForEmail}`,
-        instagram: `https://instagram.com/${cleanNameForEmail}`,
+        facebook: "No public profile",
+        instagram: "No public profile",
         twitter: "No public profile"
       },
-      websiteStatus: "No official website - Google Maps / directory only",
-      verified: true,
+      websiteStatus: "Not verified in demo fallback",
+      verified: false,
+      dataQuality: "synthetic",
       sourcePlatform,
-      verificationScore,
-      notes: tpl.noteTemplate
+      verificationScore: 0,
+      notes: `Synthetic demo lead only. This record was generated locally and is not evidence that a real business exists. ${tpl.noteTemplate}`
     };
   });
 }
 
-// Enterprise backend data sanitizer to ensure factual, placeholder-free contact details
+// Shared sanitizer preserves missing-data markers and provenance instead of fabricating contacts.
 function sanitizeServerLead(lead: any): any {
-  if (!lead || typeof lead !== "object") return lead;
-  const cleanName = (lead.name || "company")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  const cleanDomainName = (lead.name || "company")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-
-  let email = lead.email;
-  if (
-    !email ||
-    typeof email !== "string" ||
-    email.toLowerCase().includes("not publicly listed") ||
-    email.toLowerCase().includes("unlisted") ||
-    email.toLowerCase().includes("not available") ||
-    email.toLowerCase().includes("n/a") ||
-    !email.includes("@")
-  ) {
-    email = `info@${cleanDomainName || "company"}.com`;
-  }
-
-  let phone = lead.phone;
-  if (
-    !phone ||
-    typeof phone !== "string" ||
-    phone.toLowerCase().includes("not publicly listed") ||
-    phone.toLowerCase().includes("unlisted") ||
-    phone.toLowerCase().includes("not available") ||
-    phone.toLowerCase().includes("n/a")
-  ) {
-    phone = "+1 (555) 019-2834";
-  }
-
-  let linkedin = lead.linkedin;
-  if (
-    !linkedin ||
-    typeof linkedin !== "string" ||
-    linkedin.toLowerCase().includes("not publicly listed") ||
-    linkedin.toLowerCase().includes("unlisted") ||
-    linkedin.toLowerCase().includes("not available") ||
-    !linkedin.startsWith("http")
-  ) {
-    linkedin = `https://www.linkedin.com/company/${cleanName}`;
-  }
-
-  const socials = lead.socials || {};
-  const facebook = socials.facebook && socials.facebook.startsWith("http") && !socials.facebook.toLowerCase().includes("not ")
-    ? socials.facebook
-    : `https://facebook.com/${cleanName}`;
-  const instagram = socials.instagram && socials.instagram.startsWith("http") && !socials.instagram.toLowerCase().includes("not ")
-    ? socials.instagram
-    : `https://instagram.com/${cleanName}`;
-  const twitter = socials.twitter && socials.twitter.startsWith("http") && !socials.twitter.toLowerCase().includes("not ")
-    ? socials.twitter
-    : "No public profile";
-
-  return {
-    ...lead,
-    email,
-    phone,
-    linkedin,
-    socials: {
-      facebook,
-      instagram,
-      twitter
-    }
-  };
+  return sanitizeLeadContact(lead);
 }
 
 // Search leads using Google Search Grounding with strict Zero Hallucination policy & multi-platform sources
@@ -430,6 +371,9 @@ app.post("/api/search-leads", validateBody(searchLeadsSchema), async (req, res) 
 
   // If no API Key, serve beautiful mock results that closely match requested filters
   if (!ai) {
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
+    }
     console.log(`Fallback mock leads returned for: ${category} in ${city}, ${country} across platforms: ${platformsStr}`);
     
     const results = generateDynamicMockLeads(city, country, category, activePlatforms);
@@ -485,8 +429,6 @@ Structure:
 ]`;
 
     let response;
-    let fallbackToStandardModel = false;
-    let fallbackErrorMsg = "";
 
     try {
       // First attempt: with Google Search Grounding to get real web assets
@@ -500,21 +442,8 @@ Structure:
         },
       });
     } catch (searchError: any) {
-      console.warn("Google Search Grounding temporarily unavailable or rate-limited. Using standard Gemini model fallback.");
-      fallbackToStandardModel = true;
-      fallbackErrorMsg = searchError.message || String(searchError);
-    }
-
-    if (fallbackToStandardModel) {
-      // Second attempt: Standard text generation without the googleSearch tool
-      response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: `Locate 3-4 realistic active local brick-and-mortar businesses in ${city}, ${country} under the niche of "${category}" that urgently need a custom-built responsive HTML landing page (they lack a domain and are only catalogued on third party boards like ${platformsStr}). Make the phone numbers, addresses, and details believable and localized for ${city}. Always include a realistic professional business contact email address (e.g. info@companyname.com) for each business.\n` + prompt,
-        config: {
-          responseMimeType: "application/json",
-          systemInstruction: "You are an expert lead generator for web designers. Enforce high data quality: always return a valid professional business contact email address for each lead. Your output must be purely valid JSON containing real or highly accurate entries with no prefix markdown formatting.",
-        },
-      });
+      logEvent('warn', 'google_grounding_unavailable', req, { errorName: searchError instanceof Error ? searchError.name : 'UnknownError' });
+      throw new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Grounded lead discovery is temporarily unavailable.');
     }
 
     const text = response.text ? response.text.trim() : "[]";
@@ -526,30 +455,34 @@ Structure:
       leads = JSON.parse(cleanText);
     }
 
-    // Attach tracking IDs, ensure valid contact emails, and default sourcePlatform/verificationScore if omitted by AI
+    // A model response is only eligible for verified flags when grounding evidence exists.
+    const citations = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     leads = leads.map((lead: any, index: number) => {
-      return sanitizeServerLead({
+      const sanitized = sanitizeServerLead({
         ...lead,
         id: `lead_google_${Date.now()}_${index}`,
         sourcePlatform: lead.sourcePlatform || activePlatforms[index % activePlatforms.length] || "Google Maps",
-        verificationScore: typeof lead.verificationScore === 'number' ? lead.verificationScore : Math.floor(Math.random() * 11) + 89,
+        verificationScore: typeof lead.verificationScore === 'number' ? lead.verificationScore : 0,
         status: "new",
         createdAt: new Date().toISOString()
       });
+      return citations.length > 0
+        ? sanitized
+        : { ...sanitized, verified: false, dataQuality: 'unverified', verificationScore: 0 };
     });
-
-    // Extract citation URLs from grounding metadata to pass to the user UI
-    const citations = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
     res.json({ 
       leads, 
-      source: fallbackToStandardModel ? "rate-limit-fallback" : "google-search-grounding", 
+      source: "google-search-grounding",
       citations,
-      warning: fallbackToStandardModel ? "Google search grounding rate limit triggered; fallback standard models successfully completed search mapping." : undefined
+      warning: citations.length > 0 ? undefined : "No grounding citations were returned; treat these records as unverified."
     });
   } catch (error: any) {
-    console.warn("API quota/rate limit reached. Serving localized fallback discovery leads.");
-    // If both the API calls fail (e.g., quota or timeout), fall back gracefully to dynamic localized mock generator
+    logEvent('warn', 'lead_discovery_provider_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Lead discovery is temporarily unavailable.'));
+    }
+    // Development-only synthetic fallback; never present it as verified business data.
     const results = generateDynamicMockLeads(city, country, category, activePlatforms);
     const tailoredResults = results.map((item, index) => ({
       ...item,
@@ -558,7 +491,7 @@ Structure:
       createdAt: new Date().toISOString(),
       notes: `${item.notes} (Temporary fallback query served due to search rate limits).`
     }));
-    res.json({ leads: tailoredResults, source: "rate-limit-fallback" });
+    res.json({ leads: tailoredResults, source: "synthetic-demo-fallback", warning: "Synthetic demo data only; verify every record before contacting a business." });
   }
 });
 
@@ -571,25 +504,30 @@ app.post("/api/enrich-lead", validateBody(enrichLeadSchema), async (req, res) =>
   }
 
   if (!ai) {
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
+    }
     return res.json({
       enriched: {
         name,
         city,
         country,
         category: category || "Local Business",
-        phone: "+1 (555) 019-2834",
-        email: `info@${name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+        phone: "No public phone number found",
+        email: "Email not publicly listed",
         linkedin: "LinkedIn profile not publicly listed",
         socials: {
-          facebook: `https://facebook.com/${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-          instagram: "Not publicly listed",
-          twitter: "Not publicly listed"
+          facebook: "No public profile",
+          instagram: "No public profile",
+          twitter: "No public profile"
         },
-        websiteStatus: "No official website - Google Maps / directory only",
-        verified: true,
-        verificationSummary: "Offline demo audit completed: Business active on Google Maps with no standalone custom domain."
+        websiteStatus: "Not verified in demo fallback",
+        verified: false,
+        dataQuality: "synthetic",
+        verificationSummary: "Synthetic demo response only; no live business details were verified."
       },
-      source: "mock"
+      source: "synthetic-demo-fallback",
+      warning: "Synthetic demo data only; no live business details were verified."
     });
   }
 
@@ -658,28 +596,33 @@ Return strictly a valid JSON object matching this schema without markdown code b
 
     res.json({ enriched: cleanEnriched, citations, source: "google-search-grounding" });
   } catch (err: any) {
-    console.warn("Enrichment rate-limit triggered. Serving clean fallback enrichment data.");
+    logEvent('warn', 'lead_enrichment_provider_failed', req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Lead enrichment is temporarily unavailable.'));
+    }
     const fallbackEnriched = sanitizeServerLead({
       name,
       city,
       country,
       category: category || "Local Business",
-      phone: "+1 (555) 019-2834",
-      email: `info@${name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
-      linkedin: `https://www.linkedin.com/company/${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      phone: "No public phone number found",
+      email: "Email not publicly listed",
+      linkedin: "LinkedIn profile not publicly listed",
       socials: {
-        facebook: `https://facebook.com/${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-        instagram: `https://instagram.com/${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        facebook: "No public profile",
+        instagram: "No public profile",
         twitter: "No public profile"
       },
-      websiteStatus: "No official website - Google Maps / directory only",
-      verified: true,
-      verificationSummary: "Offline business verified on local directories; custom domain and booking system recommended."
+      websiteStatus: "Not verified in demo fallback",
+      verified: false,
+      dataQuality: "synthetic",
+      verificationSummary: "Synthetic demo response only; no live business details were verified."
     });
 
     res.json({
       enriched: fallbackEnriched,
-      source: "rate-limit-fallback"
+      source: "synthetic-demo-fallback",
+      warning: "Synthetic demo data only; verify every detail before contacting a business."
     });
   }
 });
@@ -693,6 +636,9 @@ app.post("/api/linkedin-intelligence", requirePro(() => db), validateBody(linked
 
   try {
     if (!ai) {
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
+    }
       throw new Error("AI engine unavailable");
     }
 
@@ -732,36 +678,23 @@ IMPORTANT: Do not hallucinate private personal emails or unlisted phones. Only r
 
     res.json({ companyIntelligence: parsed, source: "gemini" });
   } catch (err: any) {
-    console.warn("LinkedIn Intelligence endpoint fallback triggered:", err.message);
+    logEvent('warn', 'linkedin_provider_failed', req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'LinkedIn intelligence is temporarily unavailable.'));
+    }
     const cleanName = (companyName || 'Local Enterprise').trim();
-    const slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
     res.json({
       companyIntelligence: {
         companyName: cleanName,
-        linkedinUrl: `https://www.linkedin.com/company/${slug}`,
-        employeeCountRange: "2-10 employees",
+        employeeCountRange: "Not publicly listed",
         industry: category || "Local Services & Retail",
-        verifiedSocialFootprint: true,
-        keyDecisionMakers: [
-          {
-            name: "Owner / Principal Manager",
-            role: "Founder & Managing Owner",
-            department: "Executive Leadership",
-            profileUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(cleanName + ' owner ' + city)}`,
-            verifiedStatus: "Verified Active"
-          },
-          {
-            name: "Operations & Marketing Lead",
-            role: "Customer Experience / General Manager",
-            department: "Operations",
-            profileUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(cleanName + ' manager ' + city)}`,
-            verifiedStatus: "Estimated"
-          }
-        ],
+        verifiedSocialFootprint: false,
+        keyDecisionMakers: [],
         lastAuditedAt: new Date().toISOString(),
-        summary: `Verified active professional footprint for ${cleanName} in ${city}. Business exhibits local decision-maker presence; direct founder outreach is recommended.`
+        summary: `Heuristic demo response only for ${cleanName}; no LinkedIn company or decision-maker details were verified.`
       },
-      source: "heuristic-fallback"
+      source: "heuristic-demo-fallback",
+      warning: "Heuristic demo data only; verify every LinkedIn detail before outreach."
     });
   }
 });
@@ -773,18 +706,15 @@ app.post("/api/web-adaptability-check", requirePro(() => db), validateBody(webAd
     return res.status(400).json({ error: "name is required" });
   }
 
-  const isNoWebsite = !websiteStatus || String(websiteStatus).toLowerCase().includes("no official");
   res.json({
     adaptability: {
       lastCheckedAt: new Date().toISOString(),
-      status: isNoWebsite ? "Active Unchanged" : "Web Changes Detected",
-      httpStatus: 200,
-      detectedChanges: isNoWebsite
-        ? ["No active custom domain detected.", "Verified active on 3+ local directory listings."]
-        : ["Listing updated on Google Maps within last 30 days.", "Social profile link active."],
-      adaptabilityScore: 92
+      status: "Not checked",
+      detectedChanges: [],
+      adaptabilityScore: 0
     },
-    source: "web-adaptability-monitor"
+    source: "unavailable-monitor",
+    warning: "No web-monitoring provider is configured; no live website status was verified."
   });
 });
 
@@ -987,6 +917,9 @@ app.post("/api/generate-pitch", requirePro(() => db), validateBody(generatePitch
   }
 
   if (!ai) {
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
+    }
     const promptValueMock = generateFallbackPitch(lead, variant, language);
     await new Promise(resolve => setTimeout(resolve, 800));
     return res.json({ pitch: promptValueMock, source: "mock" });
@@ -1041,12 +974,16 @@ Return strictly a valid raw JSON object matching the following Schema. Do not in
 
     res.json({ pitch, source: "gemini" });
   } catch (error: any) {
-    console.warn("Gemini Pitch Generator rate-limit triggered. Serving localized fallback pitch.");
-    // Fall back gracefully under rate limit or key quota exhaustion
+    logEvent('warn', 'pitch_provider_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Pitch generation is temporarily unavailable.'));
+    }
     const fallbackPitch = generateFallbackPitch(lead, variant, language);
-    res.json({ pitch: fallbackPitch, source: "rate-limit-fallback" });
+    res.json({ pitch: fallbackPitch, source: "synthetic-demo-fallback", warning: "Synthetic demo copy only; review every factual claim before sending." });
   }
-});function getValidPaystackEmail(inputEmail?: string): string {
+});
+
+function getValidPaystackEmail(inputEmail?: string): string {
   if (!inputEmail || typeof inputEmail !== "string") {
     return "billing@leadsradar.com";
   }
@@ -1093,7 +1030,7 @@ app.post("/api/paystack/create-checkout-session", validateBody(checkoutSessionSc
 
     // Proactively auto-detect the merchant's currency to avoid currency/channel mismatches
     try {
-      const balanceResponse = await fetch("https://api.paystack.co/balance", {
+      const balanceResponse = await fetchWithTimeout("https://api.paystack.co/balance", {
         headers: {
           Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
         }
@@ -1138,7 +1075,7 @@ app.post("/api/paystack/create-checkout-session", validateBody(checkoutSessionSc
 
     logEvent("info", "paystack_checkout_initialized", req, { amount: finalAmount, currency: cur, period });
 
-    let response = await fetch("https://api.paystack.co/transaction/initialize", {
+    let response = await fetchWithTimeout("https://api.paystack.co/transaction/initialize", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
@@ -1171,7 +1108,7 @@ app.post("/api/paystack/create-checkout-session", validateBody(checkoutSessionSc
         
         // Let Paystack default the currency, but reset amount to its base pricing scale to avoid huge charged units
         const fallbackAmount = period === 'year' ? 70000 : 10000; // 70,000 or 10,000 safe minimum default
-        response = await fetch("https://api.paystack.co/transaction/initialize", {
+        response = await fetchWithTimeout("https://api.paystack.co/transaction/initialize", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
@@ -1261,7 +1198,7 @@ app.post("/api/paystack/verify", validateBody(paystackVerifySchema), async (req,
   }
 
   try {
-    const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+    const response = await fetchWithTimeout(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
       headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
     });
     const payload = await response.json() as { status?: boolean; data?: any };
@@ -1333,6 +1270,9 @@ app.post("/api/generate-analysis", requirePro(() => db), validateBody(generateAn
   ];
 
   if (!ai) {
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
+    }
     // Generate static comprehensive fallback structure
     await new Promise(resolve => setTimeout(resolve, 800));
     return res.json({
@@ -1352,7 +1292,8 @@ app.post("/api/generate-analysis", requirePro(() => db), validateBody(generateAn
         digitalStrategy: `Build an elegant, high-speed single-page site featuring local grid highlights, a streamlined reservation widget, and responsive mobile scheduling.`,
         competitors: mockCompetitors
       },
-      source: "mock"
+      source: "synthetic-demo-fallback",
+      warning: "Synthetic demo data only; no live business details were verified."
     });
   }
 
@@ -1412,7 +1353,10 @@ Strict Schema:
 
     res.json({ analysis, source: "gemini" });
   } catch (error: any) {
-    console.error("Gemini SWOT analysis generator failed, running static optimizer:", error);
+    logEvent('warn', 'analysis_provider_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Analysis service is temporarily unavailable.'));
+    }
     res.json({
       analysis: {
         swot: {
@@ -1430,8 +1374,8 @@ Strict Schema:
         digitalStrategy: "Present a working visual site draft demonstrating scheduled notification triggers to easily overcome typical objection patterns.",
         competitors: mockCompetitors
       },
-      source: "rate-limit-fallback",
-      error: error.message
+      source: "synthetic-demo-fallback",
+      warning: "Synthetic demo analysis only; competitor and metric claims require independent verification."
     });
   }
 });
@@ -1454,6 +1398,9 @@ When answering:
 - Speak directly, action-oriented, professional, and friendly. Avoid general or generic advice; always tailor suggestions to this brand's physical service niche and neighborhood context. Keep markdown formatting pristine.`;
 
   if (!ai) {
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
+    }
     // Return friendly sandbox AI simulated response
     await new Promise(resolve => setTimeout(resolve, 800));
     const lastMsg = messages[messages.length - 1]?.content || "";
@@ -1483,14 +1430,14 @@ What specific objection or pricing strategy would you like us to detail next?`;
 
     res.json({ reply: response.text || "Assistant computed blank, please try again.", source: "gemini" });
   } catch (error: any) {
-    console.error("Gemini Chat Coach failed:", error);
+    logEvent('warn', 'assistant_provider_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    if (!runtimeConfig.allowDemoMode) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Assistant service is temporarily unavailable.'));
+    }
     res.json({
-      reply: `🤖 [Coach Fallback Service] Standard quota is busy, so I've optimized a local pitch strategy for *${lead.name}*:
-      
-      - Highlight their high review rating to show they deserve an equally high-quality website.
-      - Frame the project as an **investment in time recovery**, shifting customer inquiries from tedious phone call disruptions to elegant, self-serving reservations.`,
-      source: "rate-limit-fallback",
-      error: error.message
+      reply: `Sandbox assistant fallback: review this draft against the lead’s verified facts before use.`,
+      source: "synthetic-demo-fallback",
+      warning: "Synthetic demo response only; no factual business claims were verified."
     });
   }
 });
@@ -1577,7 +1524,7 @@ app.post("/api/gmail/send", requirePro(() => db), validateBody(gmailSendSchema),
       .replace(/=+$/, '');
        
     // Post to Google API users.me.messages.send
-    const gmailResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    const gmailResponse = await fetchWithTimeout("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${decryptedToken}`,
@@ -1587,20 +1534,17 @@ app.post("/api/gmail/send", requirePro(() => db), validateBody(gmailSendSchema),
     });
     
     if (!gmailResponse.ok) {
-      const errBody = await gmailResponse.text();
-      console.error("Gmail Google API response error:", errBody);
-      return res.status(gmailResponse.status).json({ 
-        error: `Google API Error: ${errBody}`,
-        suggestReconnect: gmailResponse.status === 401
-      });
+      await gmailResponse.text();
+      logEvent('warn', 'gmail_provider_rejected_send', req, { providerStatus: gmailResponse.status });
+      return sendApiError(res, req, new ApiError(gmailResponse.status === 401 ? 401 : 502, gmailResponse.status === 401 ? 'UNAUTHORIZED' : 'DEPENDENCY_UNAVAILABLE', 'Gmail provider rejected the send request.'));
     }
-    
+
     const gmailResult = await gmailResponse.json() as any;
-    console.log(`Email successfully sent directly via Gmail API to: ${to}, ID: ${gmailResult.id}`);
+    logEvent('info', 'gmail_message_sent', req, { providerMessageId: typeof gmailResult.id === 'string' ? gmailResult.id : undefined });
     res.json({ success: true, messageId: gmailResult.id });
   } catch (err: any) {
-    console.error("Send Gmail API error:", err);
-    res.status(500).json({ error: err.message });
+    logEvent('error', 'gmail_send_failed', req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(502, 'DEPENDENCY_UNAVAILABLE', 'Gmail send is temporarily unavailable.'));
   }
 });
 
@@ -1650,7 +1594,7 @@ Write only the email body response, and keep it friendly and short.`;
     const decryptedToken = encryptionService.decrypt(integration.encryptedToken);
     
     // Fetch threads or messages with search constraint from lead
-    const listResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=from:${leadEmail}`, {
+    const listResponse = await fetchWithTimeout(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(`from:${leadEmail}`)}`, {
       headers: { "Authorization": `Bearer ${decryptedToken}` }
     });
     
@@ -1664,7 +1608,7 @@ Write only the email body response, and keep it friendly and short.`;
     }
     
     const msgId = listData.messages[0].id;
-    const msgResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}`, {
+    const msgResponse = await fetchWithTimeout(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}`, {
       headers: { "Authorization": `Bearer ${decryptedToken}` }
     });
     
@@ -1699,8 +1643,8 @@ Craft a professional, friendly response that builds rapport and advances the sal
       suggestedReply 
     });
   } catch (err: any) {
-    console.error("Check replies error:", err);
-    res.status(500).json({ error: err.message });
+    logEvent('error', 'gmail_reply_check_failed', req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(502, 'DEPENDENCY_UNAVAILABLE', 'Gmail reply checking is temporarily unavailable.'));
   }
 });
 

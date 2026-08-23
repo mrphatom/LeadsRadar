@@ -184,13 +184,21 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
             {lead.category}
           </div>
 
-          {lead.verified && (
-            <span 
+          {lead.verified && lead.dataQuality === 'verified' ? (
+            <span
               className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md"
-              title="Verified factual business via Google Search Grounding with Zero-Hallucination policy"
+              title="Verified with provider grounding evidence"
             >
               <ShieldCheck className="h-3 w-3" />
               Verified Factual
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md"
+              title="Contact and business details require independent verification"
+            >
+              <AlertCircle className="h-3 w-3" />
+              {lead.dataQuality === 'synthetic' ? 'Synthetic Demo' : 'Unverified Data'}
             </span>
           )}
 
