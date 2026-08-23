@@ -86,6 +86,37 @@ The Compose sample binds to `127.0.0.1` by default so the service is not directl
 
 The container uses the external environment file only at runtime, runs as the non-root `node` user, drops Linux capabilities, enables `no-new-privileges`, uses a read-only root filesystem, and provides a bounded `/tmp`. The healthcheck calls `/readyz`, so an instance is unhealthy until Firebase Admin Auth and Firestore initialize.
 
+## systemd service management
+
+`deploy/leadsradar.service.example` manages the Compose lifecycle but is intentionally not installed or enabled by the repository. Install it only on the target host after copying a reviewed release into `/opt/leadsradar` and creating `/etc/leadsradar/production.env` with mode `600`.
+
+```bash
+sudo install -d -m 755 /opt/leadsradar
+sudo install -d -m 700 /etc/leadsradar
+# Copy the reviewed repository release into /opt/leadsradar, including the Dockerfile,
+# docker-compose.production.yml, and deploy/leadsradar.service.example.
+sudo install -m 644 deploy/leadsradar.service.example /etc/systemd/system/leadsradar.service
+sudo systemctl daemon-reload
+
+# Build the image before the unit starts; the unit deliberately uses --no-build.
+sudo LEADSRADAR_ENV_FILE=/etc/leadsradar/production.env docker compose -f /opt/leadsradar/docker-compose.production.yml build --pull
+sudo systemctl enable --now leadsradar.service
+sudo systemctl status leadsradar.service --no-pager
+```
+
+The unit injects `LEADSRADAR_ENV_FILE` into Compose through the systemd service environment. It does not copy, print, or place secret values in the unit file. Use the following operations for routine management:
+
+```bash
+sudo systemctl restart leadsradar.service
+sudo systemctl reload leadsradar.service
+sudo journalctl -u leadsradar.service -n 100 --no-pager
+sudo systemctl disable --now leadsradar.service
+```
+
+For an update, stage the new reviewed release, build the replacement image, then restart the unit. Keep the previous image tag or immutable release directory available until `/healthz`, `/readyz`, authentication, and the critical user flow have been verified. If the new release fails, retag or restore the previous image and run `sudo systemctl restart leadsradar.service`; do not delete the old image before rollback readiness is confirmed.
+
+The unit was syntax-checked with `systemd-analyze` using a temporary `.service` filename. Full host validation was not possible in the sandbox because Docker and `docker.service` are unavailable; validate the unit on the target host before enabling it with `sudo systemd-analyze verify /etc/systemd/system/leadsradar.service`.
+
 ## Recommended secret-manager procedure
 
 Create separate secret sets for local development, staging, and production. Use the hosting provider's encrypted environment-variable store or Google Cloud Secret Manager. Grant the deployed server identity only the minimum access required to read the secrets. Inject secrets at runtime rather than writing a `.env` file into the image or repository.
