@@ -87,7 +87,7 @@ export default function DeepWebAuditModal({
         onUpdateLead(sanitizeLeadContact(updatedLead));
       }
     } catch (err) {
-      console.warn('Provider evidence review could not complete:', err);
+      console.warn('Provider evidence review could not complete:', err instanceof Error ? err.name : 'UnknownError');
       setLinkedinData(getFallbackLinkedInIntelligence(lead.name, lead.city, lead.category));
       setAdaptabilityData(getFallbackWebAdaptability(lead));
       setVerifiedEmail(sanitizeEmail(lead.email, lead.name));

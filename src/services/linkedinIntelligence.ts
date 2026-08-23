@@ -29,7 +29,7 @@ export async function fetchLinkedInIntelligence(
     }
     throw new Error('Invalid response structure from LinkedIn Intelligence endpoint.');
   } catch (error) {
-    console.warn('LinkedIn intelligence provider unavailable; returning unverified state.', error);
+    console.warn('LinkedIn intelligence provider unavailable; returning unverified state.', error instanceof Error ? error.name : 'UnknownError');
     return getFallbackLinkedInIntelligence(leadName, city, category);
   }
 }

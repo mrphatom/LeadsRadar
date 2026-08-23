@@ -107,7 +107,7 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
         onUpdate(enrichedLead);
       }
     } catch (err) {
-      console.warn("Google Places provider refresh unavailable; existing lead data was preserved:", err);
+      console.warn("Google Places provider refresh unavailable; existing lead data was preserved:", err instanceof Error ? err.name : 'UnknownError');
     } finally {
       setRefreshingProvider(false);
     }

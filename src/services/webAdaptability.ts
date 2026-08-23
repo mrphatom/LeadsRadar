@@ -26,7 +26,7 @@ export async function checkWebAdaptability(lead: BusinessLead): Promise<WebAdapt
     }
     throw new Error('Invalid adaptability response structure.');
   } catch (err) {
-    console.warn('Web adaptability provider unavailable; returning unverified state.', err);
+    console.warn('Web adaptability provider unavailable; returning unverified state.', err instanceof Error ? err.name : 'UnknownError');
     return getFallbackWebAdaptability(lead);
   }
 }

@@ -35,6 +35,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
   const [replyData, setReplyData] = useState<{ hasReply: boolean; replySnippet?: string; suggestedReply?: string | null; guidanceAvailable?: boolean } | null>(null);
 
   const [sendingReply, setSendingReply] = useState(false);
+  const [replySendError, setReplySendError] = useState<string | null>(null);
   const [replySubject, setReplySubject] = useState('');
   const [replyBody, setReplyBody] = useState('');
 
@@ -457,8 +458,8 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
       handleContactAction(true);
       triggerCopyNotice("Message accepted by Gmail provider.");
     } catch (err: any) {
-      console.error("Direct send error:", err);
-      setDirectMailError(err.message || "Outbound email transmission failed.");
+      console.warn("Direct Gmail send failed:", err instanceof Error ? err.name : 'UnknownError');
+      setDirectMailError(err instanceof Error ? err.message : "Outbound email transmission failed.");
     } finally {
       setDirectMailSending(false);
     }
@@ -481,7 +482,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to checking replies.");
+        throw new Error(data.error || "Failed to check replies.");
       }
 
       setReplyData(data);
@@ -490,8 +491,8 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         setReplyBody(data.suggestedReply || '');
       }
     } catch (err: any) {
-      console.error("Check replies error:", err);
-      setReplyCheckError(err.message || "Underlying reply-scan query failed.");
+      console.warn("Gmail reply check failed:", err instanceof Error ? err.name : 'UnknownError');
+      setReplyCheckError(err instanceof Error ? err.message : "Underlying reply-scan query failed.");
     } finally {
       setCheckingReplies(false);
     }
@@ -500,6 +501,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
   const handleSendReplyDirectly = async () => {
     if (!user || !replyBody) return;
     setSendingReply(true);
+    setReplySendError(null);
     try {
       const res = await apiFetch("/api/gmail/send", {
         method: "POST",
@@ -531,7 +533,8 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         activityLog: [newLog, ...lead.activityLog]
       });
     } catch (err: any) {
-      alert(err.message || "Failed to send direct reply.");
+      console.warn("Direct Gmail reply failed:", err instanceof Error ? err.name : 'UnknownError');
+      setReplySendError(err instanceof Error ? err.message : "Failed to send direct reply.");
     } finally {
       setSendingReply(false);
     }
@@ -1154,8 +1157,14 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                             </div>
 
                             {replyCheckError && (
-                              <p className="text-red-400 text-xs py-1.5 px-3 bg-red-500/15 border border-red-950 rounded-lg">
+                              <p role="alert" className="text-red-400 text-xs py-1.5 px-3 bg-red-500/15 border border-red-950 rounded-lg">
                                 {replyCheckError}
+                              </p>
+                            )}
+
+                            {replySendError && (
+                              <p role="alert" className="text-red-400 text-xs py-1.5 px-3 bg-red-500/15 border border-red-950 rounded-lg">
+                                {replySendError}
                               </p>
                             )}
 

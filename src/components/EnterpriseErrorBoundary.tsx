@@ -52,10 +52,11 @@ export class EnterpriseErrorBoundary extends React.Component<Props, State> {
             <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-4 text-red-400">
               <ShieldAlert className="w-7 h-7" />
             </div>
-            <h2 className="text-xl font-bold text-white mb-2">Enterprise Recovery Protection</h2>
+            <h2 className="text-xl font-bold text-white mb-2">This workspace view stopped rendering</h2>
             <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
-              The application encountered an unexpected runtime exception. The security and data integrity layer has isolated the event.
+              An unexpected client-side error interrupted this part of the workspace. The error boundary keeps the failure contained to the rendered interface; server authentication, data persistence, and monitoring remain separate controls.
             </p>
+
             <div className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg p-3 mb-6 text-left">
               <p className="text-xs text-zinc-400 leading-relaxed">
                 Reload the application to retry. If the issue continues, contact the workspace administrator with the time of the failure.
