@@ -35,9 +35,15 @@ jobs:
           DEPLOY_REF: ${{ inputs.ref || github.sha }}
         run: |
           set -euo pipefail
-          status="$(gh api "repos/${REPOSITORY}/commits/${DEPLOY_REF}/status" --jq '.state')"
-          if [ "$status" != "success" ]; then
-            echo "The selected commit does not have a successful aggregate CI status: $status" >&2
+          ci_conclusion="$(gh run list \
+            --repo "$REPOSITORY" \
+            --workflow ci.yml \
+            --commit "$DEPLOY_REF" \
+            --json status,conclusion \
+            --limit 1 \
+            --jq 'if length == 0 then "missing" elif .[0].status != "completed" then "running" else .[0].conclusion end')"
+          if [ "$ci_conclusion" != "success" ]; then
+            echo "The selected commit does not have a successful completed CI run: $ci_conclusion" >&2
             exit 1
           fi
 
