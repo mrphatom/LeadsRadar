@@ -23,6 +23,7 @@ import {
   generateAnalysisSchema,
   generatePitchSchema,
   gmailConnectSchema,
+  gmailDisconnectSchema,
   gmailReplyCheckSchema,
   gmailSendSchema,
   linkedinIntelligenceSchema,
@@ -1505,19 +1506,36 @@ app.post("/api/gmail/connect", requirePro(() => db), validateBody(gmailConnectSc
   const uid = requirePrincipal(req).uid;
   try {
     const encryptedToken = encryptionService.encrypt(token);
-    // Save to Firestore users collection
-    if (db) {
-      await db.collection("users").doc(uid).set({
-        encryptedGmailToken: encryptedToken,
-        gmailConnected: true,
-        gmailEmail: email || null
-      }, { merge: true });
-      logEvent("info", "gmail_credentials_stored", req, { provider: "gmail" });
+    if (!db) {
+      throw new Error("Firestore server is not configured.");
     }
+    const userRef = db.collection("users").doc(uid);
+    await userRef.set({ gmailConnected: true, gmailEmail: email }, { merge: true });
+    await userRef.collection("integrations").doc("gmail").set({
+      encryptedToken,
+      email,
+      updatedAt: new Date().toISOString(),
+    });
+    logEvent("info", "gmail_credentials_stored", req, { provider: "gmail" });
     res.json({ success: true });
   } catch (err: any) {
     logEvent("error", "gmail_connect_failed", req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
     return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Gmail connection could not be secured.'));
+  }
+});
+
+app.post("/api/gmail/disconnect", requirePro(() => db), validateBody(gmailDisconnectSchema), async (req, res) => {
+  const uid = requirePrincipal(req).uid;
+  try {
+    if (!db) throw new Error("Firestore server is not configured.");
+    const userRef = db.collection("users").doc(uid);
+    await userRef.collection("integrations").doc("gmail").delete();
+    await userRef.set({ gmailConnected: false, gmailEmail: null }, { merge: true });
+    logEvent("info", "gmail_credentials_deleted", req, { provider: "gmail" });
+    return res.json({ success: true });
+  } catch (error) {
+    logEvent("error", "gmail_disconnect_failed", req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Gmail credentials could not be disconnected.'));
   }
 });
 
@@ -1529,16 +1547,17 @@ app.post("/api/gmail/send", requirePro(() => db), validateBody(gmailSendSchema),
       throw new Error("Firestore server is not configured.");
     }
     const userSnap = await db.collection("users").doc(uid).get();
-    if (!userSnap.exists) {
-      throw new Error("User profile not found in database.");
-    }
-    const data = userSnap.data();
-    if (!data.gmailConnected || !data.encryptedGmailToken) {
+    const integrationSnap = await db.collection("users").doc(uid).collection("integrations").doc("gmail").get();
+    if (!userSnap.exists || !integrationSnap.exists) {
       throw new Error("Gmail service is not connected for this user.");
     }
-    
-    // Decrypt token
-    const decryptedToken = encryptionService.decrypt(data.encryptedGmailToken);
+    const data = userSnap.data();
+    const integration = integrationSnap.data();
+    if (!data?.gmailConnected || !integration?.encryptedToken) {
+      throw new Error("Gmail service is not connected for this user.");
+    }
+
+    const decryptedToken = encryptionService.decrypt(integration.encryptedToken);
     
     // Build RFC 822 email format
     const emailMsg = [
@@ -1593,10 +1612,12 @@ app.post("/api/gmail/check-replies", requirePro(() => db), validateBody(gmailRep
       throw new Error("Firestore server is not configured.");
     }
     const userSnap = await db.collection("users").doc(uid).get();
+    const integrationSnap = await db.collection("users").doc(uid).collection("integrations").doc("gmail").get();
     if (!userSnap.exists) {
       throw new Error("User profile not found.");
     }
     const data = userSnap.data();
+    const integration = integrationSnap.data();
     
     // Handle Outlook Sandbox fallback if Outlook connected
     if (data.outlookConnected && leadEmail.includes(".local")) {
@@ -1622,11 +1643,11 @@ Write only the email body response, and keep it friendly and short.`;
       });
     }
 
-    if (!data.gmailConnected || !data.encryptedGmailToken) {
+    if (!data?.gmailConnected || !integrationSnap.exists || !integration?.encryptedToken) {
       return res.json({ hasReply: false });
     }
-    
-    const decryptedToken = encryptionService.decrypt(data.encryptedGmailToken);
+
+    const decryptedToken = encryptionService.decrypt(integration.encryptedToken);
     
     // Fetch threads or messages with search constraint from lead
     const listResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=from:${leadEmail}`, {

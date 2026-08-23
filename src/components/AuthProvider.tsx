@@ -319,12 +319,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return;
     try {
       setGmailAccessToken(null);
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
-        gmailConnected: false,
-        gmailEmail: null,
-        encryptedGmailToken: null
-      }, { merge: true });
+      const response = await apiFetch('/api/gmail/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) {
+        throw new Error('Gmail credentials could not be disconnected.');
+      }
     } catch (err) {
       console.error("disconnectGmail action crash:", err);
       throw err;

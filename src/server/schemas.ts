@@ -77,6 +77,8 @@ export const gmailConnectSchema = z.object({
   token: boundedText(4096),
 }).strict();
 
+export const gmailDisconnectSchema = z.object({}).strict();
+
 export const gmailSendSchema = z.object({
   to: z.string().trim().email().max(320),
   subject: boundedText(500),
