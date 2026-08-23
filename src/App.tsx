@@ -19,6 +19,7 @@ import CheckoutSandbox from './components/CheckoutSandbox';
 import SubscriptionModal from './components/SubscriptionModal';
 import { PREPOPULATED_LEADS } from './seedData';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { apiFetch } from './apiClient';
 import { sanitizeLeadArray } from './utils/leadSanitizer';
 // @ts-ignore
 import brandLogo from './assets/images/logo_1779885424761.png';
@@ -101,7 +102,7 @@ function AppContent() {
 
   // Load API config once on mount
   useEffect(() => {
-    fetch('/api/config')
+    apiFetch('/api/config')
       .then(res => res.json())
       .then(data => setConfig(data))
       .catch(err => console.error("Error connecting to Express backend API config:", err));

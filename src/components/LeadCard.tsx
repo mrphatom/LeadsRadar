@@ -2,6 +2,7 @@ import { BusinessLead, LeadStatus } from '../types';
 import { Phone, Mail, MapPin, ClipboardList, Send, Copy, Check, ChevronRight, Linkedin, Globe, ShieldCheck, AlertCircle } from 'lucide-react';
 import React, { useState } from 'react';
 import { sanitizeLeadContact } from '../utils/leadSanitizer';
+import { apiFetch } from '../apiClient';
 
 interface LeadCardProps {
   key?: string;
@@ -74,7 +75,7 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
     e.stopPropagation();
     setFetchingEmail(true);
     try {
-      const resp = await fetch('/api/enrich-lead', {
+      const resp = await apiFetch('/api/enrich-lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

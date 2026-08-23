@@ -1,8 +1,9 @@
 import { BusinessLead, WebAdaptabilityCheck } from '../types';
+import { apiFetch } from '../apiClient';
 
 export async function checkWebAdaptability(lead: BusinessLead): Promise<WebAdaptabilityCheck> {
   try {
-    const response = await fetch('/api/web-adaptability-check', {
+    const response = await apiFetch('/api/web-adaptability-check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

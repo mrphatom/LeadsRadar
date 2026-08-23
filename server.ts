@@ -3,18 +3,62 @@ import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
 import crypto from "crypto";
+import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { initializeApp as initAdminApp, getApps, getApp, cert } from "firebase-admin/app";
+import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
-// Stripe import removed
+import { getRuntimeConfig } from "./src/server/runtimeConfig.ts";
+import { errorHandler, logEvent, requestContext, requireAuth, requirePrincipal } from "./src/server/http.ts";
+import { ApiError, isAllowedOrigin } from "./src/server/security.ts";
+import {
+  chatAssistantSchema,
+  checkoutSessionSchema,
+  enrichLeadSchema,
+  generateAnalysisSchema,
+  generatePitchSchema,
+  gmailConnectSchema,
+  gmailReplyCheckSchema,
+  gmailSendSchema,
+  linkedinIntelligenceSchema,
+  searchLeadsSchema,
+  webAdaptabilitySchema,
+} from "./src/server/schemas.ts";
 
 dotenv.config();
+const runtimeConfig = getRuntimeConfig(process.env);
+if (runtimeConfig.isProduction && !process.env.GEMINI_API_KEY) {
+  throw new Error("GEMINI_API_KEY is required in production.");
+}
 
 const app = express();
-app.use(express.json());
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
+app.use(requestContext);
+app.use(helmet());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin, runtimeConfig.allowedOrigins)) {
+      callback(null, true);
+      return;
+    }
+    callback(new ApiError(403, "FORBIDDEN", "Origin is not allowed."));
+  },
+  credentials: false,
+}));
+app.use(express.json({ limit: runtimeConfig.jsonBodyLimit }));
+app.use("/api", rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+}));
 
 let db: any = null;
+let adminAuth: ReturnType<typeof getAdminAuth> | null = null;
 try {
   const configPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(configPath)) {
@@ -44,7 +88,8 @@ try {
     }
 
     db = getAdminFirestore(adminApp, firebaseConfig.firestoreDatabaseId || undefined);
-    console.log("Admin Firestore successfully initialized on Node server wrapper.");
+    adminAuth = getAdminAuth(adminApp);
+    logEvent("info", "firebase_admin_initialized", undefined, { hasServiceAccount: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT) });
   } else {
     console.warn("No firebase-applet-config.json configuration detected.");
   }
@@ -52,7 +97,6 @@ try {
   console.error("Failed to initialize server-side Firestore instance:", err);
 }
 
-const PORT = 3000;
 const hasApiKey = !!process.env.GEMINI_API_KEY;
 
 // Mock backup leads for offline/demo/fallback mode
@@ -159,11 +203,27 @@ if (hasApiKey) {
   console.log("No GEMINI_API_KEY loaded. Server will run in fallback mock mode gracefully.");
 }
 
+const authenticate = requireAuth(async (token) => {
+  if (!adminAuth) {
+    throw new Error("Firebase Admin Auth is unavailable.");
+  }
+  return adminAuth.verifyIdToken(token, true);
+});
+
+app.use("/api", (req, res, next) => {
+  if (req.path === "/config") {
+    next();
+    return;
+  }
+  authenticate(req, res, next);
+});
+
 // API to check server status & mode
 app.get("/api/config", (req, res) => {
   res.json({
-    hasApiKey,
-    message: hasApiKey 
+      hasApiKey,
+      demoMode: runtimeConfig.allowDemoMode,
+      message: hasApiKey
       ? "Gemini API integration active." 
       : "Gemini API key is not configured. The app is running in offline demo mode."
   });
@@ -1548,9 +1608,11 @@ Craft a professional, friendly response that builds rapport and advances the sal
 });
 
 
+app.use(errorHandler);
+
 // Configure Vite middleware or production file serving
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  if (!runtimeConfig.isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -1566,8 +1628,8 @@ async function startServer() {
     console.log("Production static files server configured.");
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`LeadsRadar backend running on port ${PORT}`);
+  app.listen(runtimeConfig.port, "0.0.0.0", () => {
+    logEvent("info", "server_listening", undefined, { port: runtimeConfig.port, production: runtimeConfig.isProduction });
   });
 }
 

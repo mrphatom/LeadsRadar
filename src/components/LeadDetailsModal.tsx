@@ -9,6 +9,7 @@ import { BusinessLead, LeadStatus, ActivityLogItem } from '../types';
 import { useAuth } from './AuthProvider';
 import DeepWebAuditModal from './DeepWebAuditModal';
 import { sanitizeLeadContact } from '../utils/leadSanitizer';
+import { apiFetch } from '../apiClient';
 
 
 interface LeadDetailsModalProps {
@@ -160,7 +161,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
     setLoadingPitch(true);
     setPitchError(null);
     try {
-      const response = await fetch('/api/generate-pitch', {
+      const response = await apiFetch('/api/generate-pitch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -208,7 +209,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
     e.stopPropagation();
     setFetchingEmail(true);
     try {
-      const resp = await fetch('/api/enrich-lead', {
+      const resp = await apiFetch('/api/enrich-lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -253,7 +254,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
     setLoadingAnalysis(true);
     setAnalysisError(null);
     try {
-      const response = await fetch('/api/generate-analysis', {
+      const response = await apiFetch('/api/generate-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead })
@@ -303,7 +304,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         content: m.text
       }));
 
-      const response = await fetch('/api/chat-assistant', {
+      const response = await apiFetch('/api/chat-assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -434,11 +435,10 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         throw new Error("You must connect your Gmail or Outlook credentials first.");
       }
 
-      const res = await fetch("/api/gmail/send", {
+      const res = await apiFetch("/api/gmail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          uid: user.uid,
           to: lead.email,
           subject,
           body
@@ -468,11 +468,10 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
     setReplyData(null);
 
     try {
-      const res = await fetch("/api/gmail/check-replies", {
+      const res = await apiFetch("/api/gmail/check-replies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          uid: user.uid,
           leadEmail: lead.email
         })
       });
@@ -519,11 +518,10 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         return;
       }
 
-      const res = await fetch("/api/gmail/send", {
+      const res = await apiFetch("/api/gmail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          uid: user.uid,
           to: lead.email,
           subject: replySubject || `Re: Outreach Lead`,
           body: replyBody

@@ -5,6 +5,7 @@ import {
   Settings, RefreshCw, Sliders, CheckSquare, Square, Lock, Zap
 } from 'lucide-react';
 import { CountryType, BusinessLead } from '../types';
+import { apiFetch } from '../apiClient';
 import { useAuth } from './AuthProvider';
 import SearchHistoryModal from './SearchHistoryModal';
 
@@ -124,7 +125,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
     setScanSource(null);
 
     try {
-      const response = await fetch('/api/search-leads', {
+      const response = await apiFetch('/api/search-leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -215,7 +216,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
     }, 1500);
 
     try {
-      const response = await fetch('/api/search-leads', {
+      const response = await apiFetch('/api/search-leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -308,7 +309,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       await new Promise(r => setTimeout(r, 800));
 
       try {
-        const response = await fetch('/api/search-leads', {
+        const response = await apiFetch('/api/search-leads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

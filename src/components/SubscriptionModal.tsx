@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, Sparkles, Loader2, ArrowRightLeft, ShieldCheck, Zap, Mail, Check, AlertCircle, Link } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { apiFetch } from '../apiClient';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -49,7 +50,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
         ? user.email 
         : "billing@leadsradar.com";
 
-      const response = await fetch('/api/paystack/create-checkout-session', {
+      const response = await apiFetch('/api/paystack/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

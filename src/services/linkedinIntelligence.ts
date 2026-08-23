@@ -1,4 +1,5 @@
 import { LinkedInCompanyIntelligence, LinkedInEmployeeContact, BusinessLead } from '../types';
+import { apiFetch } from '../apiClient';
 
 export async function fetchLinkedInIntelligence(
   leadName: string,
@@ -7,7 +8,7 @@ export async function fetchLinkedInIntelligence(
   category: string
 ): Promise<LinkedInCompanyIntelligence> {
   try {
-    const response = await fetch('/api/linkedin-intelligence', {
+    const response = await apiFetch('/api/linkedin-intelligence', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { apiFetch } from '../apiClient';
 import { PREPOPULATED_LEADS } from '../seedData';
 
 export interface UserProfile {
@@ -346,13 +347,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setGmailAccessToken(token);
 
       // Perform secure encryption storage on backend proxy
-      const response = await fetch('/api/gmail/connect', {
+      const response = await apiFetch('/api/gmail/connect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          uid: user.uid,
           email: verifiedEmail,
           token: token
         })

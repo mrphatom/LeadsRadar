@@ -4,6 +4,7 @@ import { BusinessLead, LinkedInCompanyIntelligence, WebAdaptabilityCheck } from 
 import { fetchLinkedInIntelligence, getFallbackLinkedInIntelligence } from '../services/linkedinIntelligence';
 import { checkWebAdaptability, getFallbackWebAdaptability } from '../services/webAdaptability';
 import { sanitizeLeadContact, sanitizeEmail, sanitizePhone } from '../utils/leadSanitizer';
+import { apiFetch } from '../apiClient';
 
 interface DeepWebAuditModalProps {
   isOpen: boolean;
@@ -43,7 +44,7 @@ export default function DeepWebAuditModal({
       const [liResult, adaptResult, enrichResp] = await Promise.all([
         fetchLinkedInIntelligence(lead.name, lead.city, lead.country, lead.category),
         checkWebAdaptability(lead),
-        fetch('/api/enrich-lead', {
+        apiFetch('/api/enrich-lead', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
