@@ -1,3 +1,5 @@
+import { isProSubscriptionActive } from './subscription.ts';
+
 export type SearchQuotaTier = 'free' | 'pro';
 
 export interface SearchQuotaResult {
@@ -20,7 +22,7 @@ function utcDay(now: Date): string {
 
 export async function consumeDailySearchQuota(db: any, uid: string, now = new Date()): Promise<SearchQuotaResult> {
   const userSnapshot = await db.collection('users').doc(uid).get();
-  const tier: SearchQuotaTier = userSnapshot.data()?.subscriptionTier === 'pro' ? 'pro' : 'free';
+  const tier: SearchQuotaTier = isProSubscriptionActive(userSnapshot.data(), now) ? 'pro' : 'free';
   const limit = SEARCH_LIMITS[tier];
   const day = utcDay(now);
   const usageRef = db.collection('usage').doc(`${uid}_${day}`);

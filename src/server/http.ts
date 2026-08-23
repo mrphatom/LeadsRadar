@@ -7,6 +7,9 @@ import {
   getBearerToken,
   redactForLog,
 } from './security.ts';
+import { isProSubscriptionActive } from './subscription.ts';
+
+export { isProSubscriptionActive } from './subscription.ts';
 
 export interface Principal {
   uid: string;
@@ -86,7 +89,7 @@ export function requirePro(getDb: () => any): RequestHandler {
 
     try {
       const userSnapshot = await db.collection('users').doc(principal.uid).get();
-      if (userSnapshot.data()?.subscriptionTier !== 'pro') {
+      if (!isProSubscriptionActive(userSnapshot.data())) {
         return sendApiError(res, req, new ApiError(403, 'FORBIDDEN', 'A Pro subscription is required for this feature.'));
       }
       next();

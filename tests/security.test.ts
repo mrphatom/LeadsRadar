@@ -76,8 +76,17 @@ test('creates stable public API errors without exposing internal details', () =>
   assert.equal(error.internalMessage, 'internal detail');
 });
 
-import { requireAuth } from '../src/server/http.ts';
+import { isProSubscriptionActive, requireAuth } from '../src/server/http.ts';
 import { createFirestoreUserError, getSafeFirestoreErrorContext } from '../src/utils/firestoreError.ts';
+
+test('treats only non-expired Pro subscriptions as active when an expiry is recorded', () => {
+  const now = new Date('2026-08-23T12:00:00.000Z');
+  assert.equal(isProSubscriptionActive({ subscriptionTier: 'pro', trialExpires: '2026-08-23T12:00:01.000Z' }, now), true);
+  assert.equal(isProSubscriptionActive({ subscriptionTier: 'pro', trialExpires: '2026-08-23T11:59:59.000Z' }, now), false);
+  assert.equal(isProSubscriptionActive({ subscriptionTier: 'pro', trialExpires: 'not-a-date' }, now), false);
+  assert.equal(isProSubscriptionActive({ subscriptionTier: 'free', trialExpires: '2026-08-24T12:00:00.000Z' }, now), false);
+  assert.equal(isProSubscriptionActive({ subscriptionTier: 'pro' }, now), true);
+});
 
 test('keeps Firestore diagnostics free of direct identity and raw provider details', () => {
   const context = getSafeFirestoreErrorContext(
