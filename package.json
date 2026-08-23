@@ -1,7 +1,10 @@
 {
-  "name": "react-example",
+  "name": "leadsradar",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -9,7 +12,9 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test \"tests/**/*.test.ts\""
+    "test": "tsx --test \"tests/**/*.test.ts\"",
+    "check": "npm run lint && npm test && npm run build",
+    "audit": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

@@ -1,0 +1,41 @@
+name: LeadsRadar CI
+
+on:
+  push:
+    branches: [main, master, feat/production-hardening]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build production artifacts
+        run: npm run build
+
+      - name: Check diff whitespace
+        run: git diff --check
+
+      - name: Audit high-severity production dependencies
+        run: npm run audit
