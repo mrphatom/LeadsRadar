@@ -41,12 +41,12 @@ The application keeps business identity and contact facts separate from optional
 
 ## 🛠️ Technology Stack
 
-* **Frontend**: React (v18+) with Vite, Styled via Tailwind CSS
+* **Frontend**: React 19 with Vite, styled via Tailwind CSS
 * **Backend**: Express Server Integration
 * **Database**: Cloud Firestore Databases (Firebase SDK)
 * **AI Engine**: `@google/genai` TypeScript SDK (utilizing Gemini models)
 * **Icon Set**: Lucide React
-* **Maps**: Standard Map Embed APIs with OpenStreetMap geometry configuration
+* **Maps**: Provider-linked Google Maps URLs with OpenStreetMap geometry where available
 
 ---
 
@@ -59,8 +59,15 @@ Use **Node.js 22 or newer**. Firebase Admin SDK 14 requires Node 22+, and the re
 # .env.example
 GOOGLE_PLACES_API_KEY=your_server_side_google_places_key_here
 GEMINI_API_KEY=optional_guidance_only
+GEMINI_MODEL=gemini-2.5-flash
 FIREBASE_SERVICE_ACCOUNT=your_server_side_firebase_service_account_here
 ENCRYPTION_KEY=your_server_side_encryption_key_here
+
+# MoonPay billing is optional for core workspace readiness, but all four values are required to enable checkout.
+MOONPAY_PUBLISHABLE_KEY=server-configured-value
+MOONPAY_SECRET_KEY=server-configured-value
+MOONPAY_WEBHOOK_SECRET=server-configured-value
+TREASURY_WALLET_ADDRESS=server-configured-value
 ```
 
 ### Installation
@@ -87,7 +94,8 @@ ENCRYPTION_KEY=your_server_side_encryption_key_here
 
 ## Production deployment
 
-LeadsRadar defaults to fail-closed production behavior. Run the server on **Node.js 22 or newer** and configure `NODE_ENV=production`, an HTTPS `APP_URL`, `GOOGLE_PLACES_API_KEY`, `FIREBASE_SERVICE_ACCOUNT`, and `ENCRYPTION_KEY` with at least 32 UTF-8 bytes. `GEMINI_API_KEY` is optional and is used only for clearly labeled generated guidance. MoonPay billing additionally requires `MOONPAY_PUBLISHABLE_KEY`, `MOONPAY_SECRET_KEY`, `MOONPAY_WEBHOOK_SECRET`, and `TREASURY_WALLET_ADDRESS`; set `MOONPAY_ENVIRONMENT=sandbox` locally and `production` in production. Optional pricing/currency values are `MOONPAY_BASE_CURRENCY_CODE`, `MOONPAY_CURRENCY_CODE`, `MOONPAY_MONTHLY_AMOUNT`, and `MOONPAY_YEARLY_AMOUNT`. See [`docs/deployment-secrets.md`](docs/deployment-secrets.md) for the complete secret acquisition/configuration guide and [`docs/production-operations.md`](docs/production-operations.md) for the environment contract, MoonPay signed checkout and webhook setup, credential-storage model, incident checks, and rollback procedure. For a safe local provider test, follow [`docs/moonpay-sandbox-testing.md`](docs/moonpay-sandbox-testing.md). A sample production Docker Compose deployment is available in [`docker-compose.production.yml`](docker-compose.production.yml), with an optional systemd lifecycle unit at [`deploy/leadsradar.service.example`](deploy/leadsradar.service.example); use them with an external, permission-restricted environment file as described in [`docs/deployment-secrets.md`](docs/deployment-secrets.md). For Render, review [`render.yaml`](render.yaml) and the manually gated [Render deployment workflow](.github/workflows/deploy-render.yml); the workflow requires a successful CI status and the `RENDER_DEPLOY_HOOK_URL` GitHub Actions environment secret.
+LeadsRadar defaults to fail-closed production behavior for protected operations. Run the server on **Node.js 22 or newer** and configure `NODE_ENV=production`, an HTTPS `APP_URL`, `GOOGLE_PLACES_API_KEY`, `FIREBASE_SERVICE_ACCOUNT`, and `ENCRYPTION_KEY` with at least 32 UTF-8 bytes. `GEMINI_API_KEY` is optional and is used only for clearly labeled generated guidance, using `GEMINI_MODEL` (default `gemini-2.5-flash`). Core authentication and provider discovery can be ready without MoonPay; checkout remains unavailable until `MOONPAY_PUBLISHABLE_KEY`, `MOONPAY_SECRET_KEY`, `MOONPAY_WEBHOOK_SECRET`, and `TREASURY_WALLET_ADDRESS` are all configured. Set `MOONPAY_ENVIRONMENT=sandbox` locally and `production` in production. Optional pricing/currency values are `MOONPAY_BASE_CURRENCY_CODE`, `MOONPAY_CURRENCY_CODE`, `MOONPAY_MONTHLY_AMOUNT`, and `MOONPAY_YEARLY_AMOUNT`.
+See [`docs/deployment-secrets.md`](docs/deployment-secrets.md) for the complete secret acquisition/configuration guide and [`docs/production-operations.md`](docs/production-operations.md) for the environment contract, MoonPay signed checkout and webhook setup, credential-storage model, incident checks, and rollback procedure. For a safe local provider test, follow [`docs/moonpay-sandbox-testing.md`](docs/moonpay-sandbox-testing.md). A sample production Docker Compose deployment is available in [`docker-compose.production.yml`](docker-compose.production.yml), with an optional systemd lifecycle unit at [`deploy/leadsradar.service.example`](deploy/leadsradar.service.example); use them with an external, permission-restricted environment file as described in [`docs/deployment-secrets.md`](docs/deployment-secrets.md). For Render, review [`render.yaml`](render.yaml) and the manually gated [Render deployment workflow](.github/workflows/deploy-render.yml); the workflow requires a successful CI status and the `RENDER_DEPLOY_HOOK_URL` GitHub Actions environment secret.
 
 All protected API calls require a verified Firebase ID token. Pro access and subscription state are server-authoritative and are never granted from browser localStorage or a client-controlled Firestore write. Gmail tokens are encrypted and stored outside the client-readable profile document. Google Places discovery responses expose provider citations, source IDs, and retrieval timestamps. There is no demo/mock lead fallback: if the provider is unavailable or unconfigured, discovery and enrichment return an unavailable response. Existing synthetic legacy records are hidden from the active workspace but are not deleted automatically.
 
