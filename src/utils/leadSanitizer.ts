@@ -72,6 +72,17 @@ export function sanitizeLinkedin(linkedinCandidate: string | undefined, _busines
   }
 }
 
+export function isSyntheticLead(lead: BusinessLead): boolean {
+  return lead.dataQuality === 'synthetic'
+    || lead.id?.startsWith('seed_') === true
+    || lead.email?.toLowerCase().endsWith('.local') === true
+    || lead.sourcePlatform === 'Demo generator';
+}
+
+export function isDisplayableLead(lead: BusinessLead): boolean {
+  return !isSyntheticLead(lead);
+}
+
 export function sanitizeLeadContact(lead: BusinessLead): BusinessLead {
   if (!lead) return lead;
 
@@ -79,13 +90,19 @@ export function sanitizeLeadContact(lead: BusinessLead): BusinessLead {
   const phone = sanitizePhone(lead.phone, lead.city);
   const socials = sanitizeSocials(lead.socials, lead.name);
   const linkedin = sanitizeLinkedin(lead.linkedin, lead.name);
-  const isSynthetic = lead.dataQuality === 'synthetic' || lead.id?.startsWith('seed_') || lead.email?.toLowerCase().endsWith('.local') || lead.sourcePlatform === 'Demo generator';
+  const isSynthetic = isSyntheticLead(lead);
+  const hasServerProviderEvidence = lead.evidenceAuthority === 'server-provider'
+    && lead.verificationMethod === 'google-places'
+    && typeof lead.sourceId === 'string'
+    && lead.sourceId.length > 0
+    && Array.isArray(lead.sourceUrls)
+    && lead.sourceUrls.length > 0;
   const hasMissingContact = email === MISSING_EMAIL || phone === MISSING_PHONE;
   const dataQuality: LeadDataQuality = isSynthetic
     ? 'synthetic'
     : lead.dataQuality === 'unverified'
       ? 'unverified'
-      : lead.verified && !hasMissingContact
+      : hasServerProviderEvidence
         ? 'verified'
         : hasMissingContact
           ? 'unverified'

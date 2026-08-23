@@ -155,3 +155,15 @@ test('exposes safe MoonPay defaults from runtime configuration', () => {
     /MOONPAY_ENVIRONMENT must be production in production/,
   );
 });
+
+test('exposes Google Places configuration without enabling synthetic fallback', () => {
+  const unavailable = getRuntimeConfig({ NODE_ENV: 'development', APP_URL: 'http://localhost:3000' });
+  assert.equal(unavailable.googlePlacesApiKey, undefined);
+
+  const configured = getRuntimeConfig({
+    NODE_ENV: 'development',
+    APP_URL: 'http://localhost:3000',
+    GOOGLE_PLACES_API_KEY: 'server-only-test-key',
+  });
+  assert.equal(configured.googlePlacesApiKey, 'server-only-test-key');
+});

@@ -14,6 +14,7 @@ export const enrichLeadSchema = z.object({
   city: boundedText(100),
   country: boundedText(100),
   category: z.string().trim().max(120).optional(),
+  placeId: z.string().trim().max(256).optional(),
 }).strict();
 
 export const linkedinIntelligenceSchema = z.object({

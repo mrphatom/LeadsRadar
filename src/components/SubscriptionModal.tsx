@@ -14,9 +14,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
     user, 
     profile, 
     connectGmail, 
-    disconnectGmail, 
-    connectOutlook, 
-    disconnectOutlook
+    disconnectGmail
   } = useAuth();
   const isPro = profile?.subscriptionTier === 'pro';
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year'>('month');
@@ -25,8 +23,6 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
   const [error, setError] = useState<string | null>(null);
 
   const [gmailConnecting, setGmailConnecting] = useState(false);
-  const [outlookConnecting, setOutlookConnecting] = useState(false);
-  const [outlookEmailInput, setOutlookEmailInput] = useState('');
 
   // Lock background body scroll to eliminate jitter
   useEffect(() => {
@@ -116,7 +112,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 <Zap className="h-4.5 w-4.5 fill-orange-500 text-orange-500 animate-pulse" /> Active Pro Subscription
               </div>
               <p className="text-xs text-zinc-400 max-w-md mx-auto mt-2 leading-relaxed">
-                Your account is successfully upgraded to **LeadsRadar Pro**! You enjoy increased search limits, competitive SEO and SWOT analytics, and interactive replies tracking.
+                Your account is upgraded to LeadsRadar Pro. You receive higher provider-query limits and access to clearly labeled generated guidance; measurements and contact facts still require evidence.
               </p>
             </div>
 
@@ -127,7 +123,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Outbound Email Connection Settings</h3>
               </div>
               <p className="text-[11px] text-zinc-500 leading-relaxed font-sans">
-                Connect your real Google or Outlook Account in sandbox to directly transmit high-ticket outreach scripts and pitch mails. If a connected prospect replies, Outreach AI will notify you and generate suggesting responses!
+                Connect Gmail to send messages through the configured provider. Generated scripts and reply suggestions are drafts only; review recipients, consent, and claims before sending.
               </p>
 
               {/* GMAIL AUTH SECTION */}
@@ -201,79 +197,22 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 )}
               </div>
 
-              {/* OUTLOOK OUTREACH SECTION */}
-              <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-sky-500/10 text-sky-400 rounded-lg">
-                      <Mail className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-extrabold text-white block">Microsoft Outlook Sandbox</span>
-                      <span className="text-[10px] text-zinc-500 font-mono">Sandbox outbound trigger & mock responder</span>
-                    </div>
+              <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-zinc-800 text-zinc-500 rounded-lg">
+                    <Mail className="h-4 w-4" />
                   </div>
-                  {profile?.outlookConnected ? (
-                    <div className="flex items-center gap-1.5 bg-sky-500/10 text-sky-400 px-2 py-0.5 rounded-md border border-sky-500/20 text-[9px] font-bold uppercase font-mono">
-                      <Check className="h-3 w-3" /> Connected
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5 bg-zinc-950 text-zinc-500 px-2 py-0.5 rounded-md border border-zinc-805 text-[9px] font-semibold uppercase font-mono">
-                      Disconnected
-                    </div>
-                  )}
+                  <div>
+                    <span className="text-xs font-extrabold text-white block">Microsoft Outlook</span>
+                    <span className="text-[10px] text-zinc-500 font-mono">Unavailable: no evidence-backed sending integration is configured</span>
+                  </div>
                 </div>
-
-                {profile?.outlookConnected ? (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-zinc-850/50">
-                    <span className="text-xs font-mono text-zinc-400">
-                      📧 Connected with: <strong className="text-white select-all">{profile.outlookEmail}</strong>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await disconnectOutlook();
-                      }}
-                      className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 px-3 py-1 text-[10px] rounded-lg font-bold cursor-pointer transition-all self-end"
-                    >
-                      Disconnect Outlook
-                    </button>
-                  </div>
-                ) : (
-                  <div className="pt-2 border-t border-zinc-850/50 flex flex-col sm:flex-row items-center gap-2">
-                    <input
-                      type="email"
-                      placeholder="e.g. sales@myagency.local"
-                      value={outlookEmailInput}
-                      onChange={(e) => setOutlookEmailInput(e.target.value)}
-                      className="w-full sm:flex-1 text-xs py-2.5 px-3 rounded-lg border border-zinc-800 focus:outline-hidden focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-600 font-sans"
-                    />
-                    <button
-                      type="button"
-                      disabled={outlookConnecting || !outlookEmailInput.includes('@')}
-                      onClick={async () => {
-                        setOutlookConnecting(true);
-                        try {
-                          await connectOutlook(outlookEmailInput);
-                          setOutlookEmailInput('');
-                        } catch (err: any) {
-                          alert(err.message || "Failed to register mock Outlook sandbox account.");
-                        } finally {
-                          setOutlookConnecting(false);
-                        }
-                      }}
-                      className="w-full sm:w-auto bg-zinc-100 hover:bg-white text-zinc-950 font-bold px-4 py-2.5 text-xs rounded-lg cursor-pointer transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Connect Outlook
-                    </button>
-                  </div>
-                )}
               </div>
 
             </div>
 
             <div className="pt-4 border-t border-zinc-850 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
-              <span>Subscription ID: <span className="text-zinc-400">{profile?.subscriptionId || 'Active trial session'}</span></span>
+              <span>Subscription ID: <span className="text-zinc-400">{profile?.subscriptionId || 'Provider-confirmed subscription'}</span></span>
               <span>Workspace License Verified</span>
             </div>
           </div>
@@ -284,7 +223,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 Unlock LeadsRadar Pro
               </h2>
               <p className="text-xs text-zinc-400 mt-1">
-                Equip yourself with Gemini AI automation to hunt & win high-ticket B2B local accounts easily.
+                Use provider-backed records and optional Gemini-generated planning guidance; the system does not invent business facts or promise outcomes.
               </p>
             </div>
 
@@ -340,7 +279,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                 <li className="flex items-start gap-2.5">
                   <CheckCircle2 className="h-4 w-4 text-orange-400 shrink-0 mt-0.5" />
                   <div>
-                    <strong className="text-white font-semibold">Bespoke SWOT & SEO Audits</strong>: Unlocks competitive rankings breakdowns, estimations for neighborhood traffic loss, and localized strategy plans.
+                    <strong className="text-white font-semibold">Generated strategy guidance</strong>: Drafts hypotheses and validation questions; traffic, revenue, ranking, and competitor metrics are not measured here.
                   </div>
                 </li>
                 <li className="flex items-start gap-2.5">
@@ -380,7 +319,7 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
               
               <div className="text-center">
                 <span className="text-[10px] text-zinc-500 leading-normal block">
-                  MoonPay will open a secure on-ramp for the selected plan. Pro access activates only after a verified completed transaction reaches the configured treasury wallet.
+                  MoonPay will open a secure on-ramp for the selected plan. Pro access activates only after the server confirms a completed transaction for your account.
                 </span>
               </div>
 

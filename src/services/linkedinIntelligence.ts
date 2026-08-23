@@ -46,6 +46,8 @@ export function getFallbackLinkedInIntelligence(
     verifiedSocialFootprint: false,
     keyDecisionMakers: [],
     lastAuditedAt: new Date().toISOString(),
-    summary: 'LinkedIn data was not verified because the intelligence provider was unavailable.',
+    summary: 'LinkedIn data is unavailable because no evidence-returning LinkedIn provider is configured.',
+    status: 'unavailable',
+    source: 'not-configured',
   };
 }

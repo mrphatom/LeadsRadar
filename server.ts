@@ -17,8 +17,9 @@ import { ApiError, isAllowedOrigin } from "./src/server/security.ts";
 import { createEncryptionService } from "./src/server/crypto.ts";
 import { buildMoonPayWidgetUrl, extractMoonPayOrderId, signMoonPayUrl, verifyMoonPayWebhookSignature } from "./src/server/moonpay.ts";
 import { fulfillMoonPaySubscription } from "./src/server/moonpayFulfillment.ts";
-import { consumeDailySearchQuota } from "./src/server/quotas.ts";
+import { consumeDailySearchQuota, releaseDailySearchQuota } from "./src/server/quotas.ts";
 import { sanitizeLeadContact } from "./src/utils/leadSanitizer.ts";
+import { getGooglePlaceDetails, isExactPlaceNameMatch, isOperationalOrUnspecified, mapGooglePlaceToLead, searchGooglePlaces } from "./src/server/googlePlaces.ts";
 import {
   chatAssistantSchema,
   moonpaySignUrlSchema,
@@ -121,11 +122,12 @@ try {
   console.error("Failed to initialize server-side Firestore instance:", err);
 }
 
-const hasApiKey = !!process.env.GEMINI_API_KEY;
+const hasGeminiApiKey = !!process.env.GEMINI_API_KEY;
+const hasGooglePlacesApiKey = Boolean(runtimeConfig.googlePlacesApiKey);
 
-// Verify or initialize Gemini
+// Verify or initialize Gemini for clearly labeled generated guidance only.
 let ai: GoogleGenAI | null = null;
-if (hasApiKey) {
+if (hasGeminiApiKey) {
   try {
     ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
@@ -140,7 +142,7 @@ if (hasApiKey) {
     console.error("Failed to initialize Gemini Client: ", error);
   }
 } else {
-  console.log("No GEMINI_API_KEY loaded. Server will run in fallback mock mode gracefully.");
+  console.log("No GEMINI_API_KEY loaded. Generated guidance routes are unavailable; no synthetic fallback is used.");
 }
 
 const authenticate = requireAuth(async (token) => {
@@ -158,498 +160,120 @@ app.use("/api", (req, res, next) => {
   authenticate(req, res, next);
 });
 
-// API to check server status & mode
-app.get("/api/config", (req, res) => {
+// API availability is explicit: discovery is provider-backed; AI routes are generated guidance only.
+app.get("/api/config", (_req, res) => {
   res.json({
-      hasApiKey,
-      demoMode: runtimeConfig.allowDemoMode,
-      message: hasApiKey
-      ? "Gemini API integration active." 
-      : "Gemini API key is not configured. The app is running in offline demo mode."
+    discoveryProvider: 'google-places-api',
+    discoveryAvailable: hasGooglePlacesApiKey,
+    guidanceAvailable: Boolean(ai),
+    message: hasGooglePlacesApiKey
+      ? 'Google Places discovery is configured. Records are returned only from the provider.'
+      : 'Google Places discovery is not configured. No synthetic lead fallback is available.',
   });
 });
 
-// Helper to generate beautifully tailored dynamic mock leads to prevent errors in any country, city & category
-function generateDynamicMockLeads(city: string, country: string, category: string, platforms?: string[]): any[] {
-  const activePlatforms = Array.isArray(platforms) && platforms.length > 0
-    ? platforms
-    : ["Google Maps", "Yelp", "LinkedIn", "Trustpilot", "Facebook Business", "YellowPages"];
-  const normalizedCategory = category.charAt(0).toUpperCase() + category.slice(1);
-  const cleanCity = city.charAt(0).toUpperCase() + city.slice(1);
-  const cleanCountry = country.toUpperCase();
-
-  const businessTemplates = [
-    {
-      namePrefix: ["Golden Slate", "Rustic Root", "Summit", "Apex", "Cornerstone", "Green Light", "Anchor", "Pioneer", "Enchanted"],
-      nameSuffix: ["Co.", "Group", "Partners", "Hub", "Collective", "Haven", "Lab", "Works", ""],
-      streetNames: ["Main St", "Congress Ave", "Broadway Rd", "Oak Lane", "High St", "Queen Road", "Pine Blvd", "Maple Ave", "Market Square"],
-      noteTemplate: "A popular neighborhood spot with amazing local charm and strong word-of-mouth reputation. However, they lose up to 35% of high-value client opportunities because they have zero web page or online reservation system, relying only on shared directories."
-    },
-    {
-      namePrefix: ["The Original", "Crafted", "Urban", "Metro", "Vanguard", "Starlight", "Beacon", "Heritage", "Sovereign"],
-      nameSuffix: ["Studio", "Center", "Services", "Pro", "Solutions", "Depot", "HQ", "Station"],
-      streetNames: ["Grand Avenue", "Park Lane", "Victoria Street", "Baker St", "Second Ave", "Lincoln High", "Sunset Blvd", "Elm Street"],
-      noteTemplate: "A highly-rated establishment featuring excellent local reviews. They struggle to stand out in Google Search listings because competitors have modern, mobile-friendly landing pages and automated intake capabilities. Presenting them with a custom booking widget mockup would easily win this contract."
-    },
-    {
-      namePrefix: ["Signature", "Fringe", "Wildwood", "Epicurean", "Bespoke", "Elite", "Horizon", "Ascent", "Centennial"],
-      nameSuffix: ["Society", "Space", "Company", "Guild", "Foundry", "Network", "Bazaar", "Collective"],
-      streetNames: ["Peachtree Rd", "Kensington Court", "Oxford Rd", "King St", "Mill Lane", "River Road", "Church Street", "Station Rd"],
-      noteTemplate: "A well-established independent local provider. Currently doing bookings purely via telephone, making administrative scheduling extremely tedious for staff. A clean service-catalog page with a direct WhatsApp/Call-to-Action button would double their inquiry conversions."
-    }
-  ];
-
-  // Pick suitable phone prefixes based on country keyword
-  let phonePrefix = "+1";
-  let phoneFormat = "555-";
-  if (cleanCountry === "UK" || cleanCountry.includes("UNITED KINGDOM") || cleanCountry.includes("GB") || cleanCountry.includes("LONDON") || cleanCountry.includes("OXFORD")) {
-    phonePrefix = "+44";
-    phoneFormat = "20 7946 0";
-  } else if (cleanCountry === "GERMANY" || cleanCountry.startsWith("DE") || cleanCountry.includes("DEUTSCHLAND") || cleanCountry.includes("MUNICH")) {
-    phonePrefix = "+49";
-    phoneFormat = "89 5550 ";
-  } else if (cleanCountry === "CANADA" || cleanCountry.includes("TORONTO") || cleanCountry.includes("VANCOUVER")) {
-    phonePrefix = "+1";
-    phoneFormat = "416-555-";
-  } else if (cleanCountry === "AUSTRALIA" || cleanCountry.includes("AU") || cleanCountry.includes("SYDNEY") || cleanCountry.includes("MELBOURNE")) {
-    phonePrefix = "+61";
-    phoneFormat = "2 9184 ";
-  } else if (cleanCountry === "FRANCE" || cleanCountry.startsWith("FR") || cleanCountry.includes("PARIS")) {
-    phonePrefix = "+33";
-    phoneFormat = "1 42 27 ";
-  }
-
-  // Clean the category input from search indicators
-  let displayCategory = normalizedCategory;
-  if (displayCategory.toLowerCase().includes("newly opened")) {
-    displayCategory = displayCategory.replace(/newly opened, recently listed|newly opened|recently listed/gi, '').trim();
-  }
-  // Trim rating instructions
-  if (displayCategory.toLowerCase().includes("with excellent organic ratings")) {
-    displayCategory = displayCategory.replace(/with excellent organic ratings and offline profile|with excellent organic ratings/gi, '').trim();
-  }
-  displayCategory = displayCategory.charAt(0).toUpperCase() + displayCategory.slice(1);
-
-  return businessTemplates.map((tpl, index) => {
-    const prefix = tpl.namePrefix[Math.floor(Math.random() * tpl.namePrefix.length)];
-    const suffix = tpl.nameSuffix[Math.floor(Math.random() * tpl.nameSuffix.length)];
-    const street = tpl.streetNames[Math.floor(Math.random() * tpl.streetNames.length)];
-    const streetNum = Math.floor(Math.random() * 850) + 12;
-    
-    // Generate a beautiful business name
-    let name = "";
-    if (suffix) {
-      name = `${prefix} ${displayCategory} ${suffix}`;
-    } else {
-      name = `${prefix} ${tpl.namePrefix[(index + 3) % tpl.namePrefix.length]} ${displayCategory}`;
-    }
-
-    const sourcePlatform = activePlatforms[index % activePlatforms.length] || "Demo generator";
-
-    return {
-      name,
-      country,
-      city: cleanCity,
-      address: "Not publicly listed",
-      category: displayCategory,
-      phone: "No public phone number found",
-      email: "Email not publicly listed",
-      linkedin: "LinkedIn profile not publicly listed",
-      socials: {
-        facebook: "No public profile",
-        instagram: "No public profile",
-        twitter: "No public profile"
-      },
-      websiteStatus: "Not verified in demo fallback",
-      verified: false,
-      dataQuality: "synthetic",
-      sourcePlatform,
-      verificationScore: 0,
-      notes: `Synthetic demo lead only. This record was generated locally and is not evidence that a real business exists. ${tpl.noteTemplate}`
-    };
-  });
-}
 
 // Shared sanitizer preserves missing-data markers and provenance instead of fabricating contacts.
 function sanitizeServerLead(lead: any): any {
   return sanitizeLeadContact(lead);
 }
 
-// Search leads using Google Search Grounding with strict Zero Hallucination policy & multi-platform sources
+// Search structured Google Places records; no generative lead identity or contact fallback is permitted
 app.post("/api/search-leads", validateBody(searchLeadsSchema), async (req, res) => {
-  const { country, city, category, platforms } = req.body;
-
-  if (!country || !city || !category) {
-    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'Country, city, and category are required.'));
+  const { country, city, category } = req.body;
+  const apiKey = runtimeConfig.googlePlacesApiKey;
+  if (!apiKey) {
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Google Places discovery is not configured.'));
   }
 
-  const activePlatforms = Array.isArray(platforms) && platforms.length > 0
-    ? platforms
-    : ["Google Maps", "Yelp", "LinkedIn", "Trustpilot", "Facebook Business", "YellowPages"];
-  const platformsStr = activePlatforms.join(", ");
-
-  // If no API Key, serve beautiful mock results that closely match requested filters
-  if (!ai) {
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
-    }
-    console.log(`Fallback mock leads returned for: ${category} in ${city}, ${country} across platforms: ${platformsStr}`);
-    
-    const results = generateDynamicMockLeads(city, country, category, activePlatforms);
-    const tailoredResults = results.map((item, index) => ({
-      ...item,
-      id: `lead_mock_${Date.now()}_${index}`,
-      status: "new",
-      createdAt: new Date().toISOString()
-    }));
-
-    // artificial delay to feel like a real search
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return res.json({ leads: tailoredResults, source: "mock-database" });
-  }
-
+  let reservedQuotaDay: string | undefined;
+  let principalUid: string | undefined;
   try {
-    const prompt = `Search the real-time web and local business directories including ${platformsStr} to identify up to 4 real, actually existing brick-and-mortar or local service businesses located in ${city}, ${country} in the business niche of "${category}" that lack a dedicated, modern professional website (they may only have a listing on ${platformsStr}).
-
-STRICT ZERO-HALLUCINATION POLICY:
-1. Every business MUST be a real, verifiable business currently operating in ${city}, ${country}. Never invent or fabricate business names.
-2. Verified Phone Number: Provide the real public telephone number formatted for dialling. If NO public phone number can be verified, return exactly "No public phone number found" in plain language.
-3. Contact Email Address: Return a public business email only when it is explicitly printed in the cited source. If no public email can be verified, return exactly "Email not publicly listed". Never infer, derive, or guess an email address.
-4. LinkedIn Profile: Provide their real LinkedIn company or owner profile URL if publicly discoverable. If no LinkedIn profile is found, return exactly "LinkedIn profile not publicly listed".
-5. Social Media: In the "socials" object, return real public profile URLs or handles for facebook, instagram, and twitter if found. If a platform is not found, set its value to "Not publicly listed".
-6. Website Status: Describe their current web presence (e.g. "No official website - Google Maps / directory only", "Facebook page only", "Outdated or broken website").
-7. Source Platform: Indicate the primary platform where this business profile was found (e.g. one of: ${platformsStr}).
-8. Verification Score: Return an evidence-based integer from 0 to 100. Use 0 when no grounding citation supports the record; do not inflate confidence.
-9. Notes: Factual description of what they do and why they need a modern landing page or booking portal.
-
-You MUST return the results strictly as a valid, parsable JSON array. Do not write markdown code blocks or extra formatting.
-Structure:
-[
-  {
-    "name": "Exact Real Business Name",
-    "country": "${country}",
-    "city": "${city}",
-    "address": "Accurate Street Address",
-    "category": "${category}",
-    "phone": "Verified Phone or 'No public phone number found'",
-    "email": "Verified Email or 'Email not publicly listed'",
-    "linkedin": "Verified LinkedIn URL or 'LinkedIn profile not publicly listed'",
-    "socials": {
-      "facebook": "URL or 'Not publicly listed'",
-      "instagram": "URL or 'Not publicly listed'",
-      "twitter": "URL or 'Not publicly listed'"
-    },
-    "websiteStatus": "No official website - Google Maps / directory only",
-    "verified": false,
-    "sourcePlatform": "Google Maps",
-    "verificationScore": 0,
-    "notes": "Factual description of their missing online presence and why they can benefit from a website"
-  }
-]`;
-
-    let response;
-
-    try {
-      // First attempt: with Google Search Grounding to get real web assets
-      response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json",
-          systemInstruction: "You are an expert lead generator for web designers. Enforce strict zero-hallucination policy: never guess missing email addresses or phone numbers; state plain language fallbacks. Your output must be purely valid JSON containing real entries with no prefix markdown formatting.",
-        },
-      });
-    } catch (searchError: any) {
-      logEvent('warn', 'google_grounding_unavailable', req, { errorName: searchError instanceof Error ? searchError.name : 'UnknownError' });
-      throw new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Grounded lead discovery is temporarily unavailable.');
-    }
-
-    const text = response.text ? response.text.trim() : "[]";
-    let leads = [];
-    try {
-      leads = JSON.parse(text);
-    } catch (e) {
-      const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      leads = JSON.parse(cleanText);
-    }
-
-    let quota;
-    try {
-      const principal = requirePrincipal(req);
-      if (!db) {
-        return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Usage quota service is temporarily unavailable.'));
-      }
-      quota = await consumeDailySearchQuota(db, principal.uid);
-    } catch (error) {
-      logEvent('error', 'search_quota_check_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    const principal = requirePrincipal(req);
+    principalUid = principal.uid;
+    if (!db) {
       return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Usage quota service is temporarily unavailable.'));
     }
-
+    const quota = await consumeDailySearchQuota(db, principal.uid);
     if (!quota.allowed) {
       res.setHeader('Retry-After', '86400');
-      return sendApiError(res, req, new ApiError(429, 'RATE_LIMITED', `Daily search limit reached for the ${quota.tier} plan.`));
+      return sendApiError(res, req, new ApiError(429, 'RATE_LIMITED', 'Daily search limit reached for the ' + quota.tier + ' plan.'));
     }
+        reservedQuotaDay = quota.allowed ? quota.day : undefined;
     res.setHeader('X-Search-Quota-Remaining', String(quota.remaining));
+    const retrievedAt = new Date().toISOString();
+    const places = await searchGooglePlaces(apiKey, category + ' in ' + city + ', ' + country, 10);
+    const leads = places
+      .filter(isOperationalOrUnspecified)
+      .filter((place) => !place.websiteUri)
+      .map((place) => mapGooglePlaceToLead(place, country, city, category, retrievedAt))
+      .map((lead) => sanitizeServerLead(lead));
+    const citations = leads.flatMap((lead) => (lead.sourceUrls || []).map((uri) => ({ title: lead.name, uri })));
 
-    // A model response is only eligible for verified flags when grounding evidence exists.
-    const citations = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    leads = leads.map((lead: any, index: number) => {
-      const sanitized = sanitizeServerLead({
-        ...lead,
-        id: `lead_google_${Date.now()}_${index}`,
-        sourcePlatform: lead.sourcePlatform || activePlatforms[index % activePlatforms.length] || "Google Maps",
-        verificationScore: typeof lead.verificationScore === 'number' ? lead.verificationScore : 0,
-        status: "new",
-        createdAt: new Date().toISOString()
-      });
-      return citations.length > 0
-        ? sanitized
-        : { ...sanitized, verified: false, dataQuality: 'unverified', verificationScore: 0 };
-    });
-
-    res.json({ 
-      leads, 
-      source: "google-search-grounding",
+    return res.json({
+      leads,
+      source: 'google-places-api',
+      provider: 'Google Places API (New)',
+      retrievedAt,
       citations,
       quota: { tier: quota.tier, used: quota.used, limit: quota.limit, remaining: quota.remaining, day: quota.day },
-      warning: citations.length > 0 ? undefined : "No grounding citations were returned; treat these records as unverified."
+      warning: 'Records are sourced from Google Places at retrieval time. Email, LinkedIn, and social profiles are not returned by this provider and are not inferred.',
     });
-  } catch (error: any) {
-    logEvent('warn', 'lead_discovery_provider_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Lead discovery is temporarily unavailable.'));
+  } catch (error) {
+    if (db && principalUid && reservedQuotaDay) {
+      try {
+        await releaseDailySearchQuota(db, principalUid, reservedQuotaDay);
+      } catch (releaseError) {
+        logEvent('error', 'google_places_quota_release_failed', req, { errorName: releaseError instanceof Error ? releaseError.name : 'UnknownError' });
+      }
     }
-    // Development-only synthetic fallback; never present it as verified business data.
-    const results = generateDynamicMockLeads(city, country, category, activePlatforms);
-    const tailoredResults = results.map((item, index) => ({
-      ...item,
-      id: `lead_fallback_${Date.now()}_${index}`,
-      status: "new",
-      createdAt: new Date().toISOString(),
-      notes: `${item.notes} (Temporary fallback query served due to search rate limits).`
-    }));
-    res.json({ leads: tailoredResults, source: "synthetic-demo-fallback", warning: "Synthetic demo data only; verify every record before contacting a business." });
+    logEvent('warn', 'google_places_discovery_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Google Places discovery is temporarily unavailable.'));
   }
 });
 
-// Deep factual enrichment & social search endpoint using Google Search Grounding
+// Refresh one structured Google Places record by Place ID or an unambiguous name match
 app.post("/api/enrich-lead", validateBody(enrichLeadSchema), async (req, res) => {
-  const { name, city, country, category } = req.body;
-
-  if (!name || !city || !country) {
-    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'Business name, city, and country are required for enrichment.'));
-  }
-
-  if (!ai) {
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
-    }
-    return res.json({
-      enriched: {
-        name,
-        city,
-        country,
-        category: category || "Local Business",
-        phone: "No public phone number found",
-        email: "Email not publicly listed",
-        linkedin: "LinkedIn profile not publicly listed",
-        socials: {
-          facebook: "No public profile",
-          instagram: "No public profile",
-          twitter: "No public profile"
-        },
-        websiteStatus: "Not verified in demo fallback",
-        verified: false,
-        dataQuality: "synthetic",
-        verificationSummary: "Synthetic demo response only; no live business details were verified."
-      },
-      source: "synthetic-demo-fallback",
-      warning: "Synthetic demo data only; no live business details were verified."
-    });
+  const { name, city, country, category, placeId } = req.body;
+  const apiKey = runtimeConfig.googlePlacesApiKey;
+  if (!apiKey) {
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Google Places enrichment is not configured.'));
   }
 
   try {
-    const prompt = `Perform a deep factual web investigation and social profile verification for the following local business:
-Business Name: "${name}"
-City: "${city}"
-Country: "${country}"
-Category/Niche: "${category || ''}"
-
-STRICT ZERO-HALLUCINATION REQUIREMENT:
-Search real-time web directories, Google Maps citations, LinkedIn, Facebook, Instagram, and local registries.
-1. verifiedPhone: Provide their real public telephone number. If no public phone exists, return exactly "No public phone number found".
-2. verifiedEmail: Return a public business email only when it is explicitly printed in a cited source. If no public email can be verified, return exactly "Email not publicly listed". Never infer, derive, or guess an email address.
-3. linkedin: Return their real LinkedIn company or owner profile URL if found. If not found, return exactly "LinkedIn profile not publicly listed".
-4. socials: Return real public URLs for facebook, instagram, and twitter if found. For any missing platform, return exactly "Not publicly listed".
-5. websiteStatus: Describe their web presence accurately (e.g. "No official website - Google Maps / directory only", "Facebook page only", or URL if found).
-6. verificationSummary: A 2-sentence factual summary of where this business is listed online and their web presence gap.
-
-Return strictly a valid JSON object matching this schema without markdown code blocks:
-{
-  "name": "${name}",
-  "city": "${city}",
-  "country": "${country}",
-  "phone": "Verified phone or 'No public phone number found'",
-  "email": "Verified email or 'Email not publicly listed'",
-  "linkedin": "Verified LinkedIn URL or 'LinkedIn profile not publicly listed'",
-  "socials": {
-    "facebook": "URL or 'Not publicly listed'",
-    "instagram": "URL or 'Not publicly listed'",
-    "twitter": "URL or 'Not publicly listed'"
-  },
-  "websiteStatus": "...",
-  "verified": false,
-  "verificationSummary": "..."
-}`;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        systemInstruction: "You are an expert fact-checking business researcher. Never hallucinate or predict emails or phone numbers. If data is not publicly found, use clear plain language status messages."
+    let place;
+    if (placeId) {
+      place = await getGooglePlaceDetails(apiKey, placeId);
+    } else {
+      const candidates = (await searchGooglePlaces(apiKey, name + ', ' + city + ', ' + country, 5)).filter(isOperationalOrUnspecified);
+      const exactMatches = candidates.filter((candidate) => isExactPlaceNameMatch(candidate, name));
+      if (exactMatches.length !== 1) {
+        return sendApiError(res, req, new ApiError(404, 'NOT_FOUND', 'Google Places returned no unambiguous matching business record.'));
       }
-    });
-
-    const text = response.text ? response.text.trim() : "{}";
-    let enriched: any = {};
-    try {
-      enriched = JSON.parse(text);
-    } catch (e) {
-      const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      enriched = JSON.parse(cleanText);
+      place = exactMatches[0];
     }
 
-    const cleanEnriched = sanitizeServerLead({
-      name,
-      city,
-      country,
-      category,
-      ...enriched
+    const retrievedAt = new Date().toISOString();
+    const enriched = sanitizeServerLead(mapGooglePlaceToLead(place, country, city, category || '', retrievedAt));
+    const citations = (enriched.sourceUrls || []).map((uri) => ({ title: enriched.name, uri }));
+    return res.json({
+      enriched,
+      source: 'google-places-api',
+      provider: 'Google Places API (New)',
+      retrievedAt,
+      citations,
+      warning: 'Only fields returned by Google Places are included. Email, LinkedIn, and social profiles are not inferred.',
     });
-
-    const citations = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-
-    res.json({ enriched: cleanEnriched, citations, source: "google-search-grounding" });
-  } catch (err: any) {
-    logEvent('warn', 'lead_enrichment_provider_failed', req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Lead enrichment is temporarily unavailable.'));
-    }
-    const fallbackEnriched = sanitizeServerLead({
-      name,
-      city,
-      country,
-      category: category || "Local Business",
-      phone: "No public phone number found",
-      email: "Email not publicly listed",
-      linkedin: "LinkedIn profile not publicly listed",
-      socials: {
-        facebook: "No public profile",
-        instagram: "No public profile",
-        twitter: "No public profile"
-      },
-      websiteStatus: "Not verified in demo fallback",
-      verified: false,
-      dataQuality: "synthetic",
-      verificationSummary: "Synthetic demo response only; no live business details were verified."
-    });
-
-    res.json({
-      enriched: fallbackEnriched,
-      source: "synthetic-demo-fallback",
-      warning: "Synthetic demo data only; verify every detail before contacting a business."
-    });
+  } catch (error) {
+    logEvent('warn', 'google_places_enrichment_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Google Places enrichment is temporarily unavailable.'));
   }
 });
 
 // --- LinkedIn Company & Employee Intelligence Endpoint ---
 app.post("/api/linkedin-intelligence", requirePro(() => db), validateBody(linkedinIntelligenceSchema), async (req, res) => {
-  const { companyName, city, country, category } = req.body;
-  if (!companyName) {
-    return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'companyName is required.'));
-  }
-
-  try {
-    if (!ai) {
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
-    }
-      throw new Error("AI engine unavailable");
-    }
-
-    const prompt = `You are a B2B LinkedIn Intelligence auditor. Research and verify the company profile and employee decision-makers for "${companyName}" in "${city}", "${country}" (${category}).
-Return strictly valid JSON matching this schema without markdown block tags or markdown fences:
-{
-  "companyName": "${companyName}",
-  "linkedinUrl": "https://www.linkedin.com/company/...",
-  "employeeCountRange": "2-10 employees",
-  "industry": "${category || 'Local Services'}",
-  "verifiedSocialFootprint": true,
-  "lastAuditedAt": "${new Date().toISOString()}",
-  "summary": "...",
-  "keyDecisionMakers": [
-    {
-      "name": "...",
-      "role": "...",
-      "department": "...",
-      "profileUrl": "https://www.linkedin.com/search/results/people/?keywords=...",
-      "verifiedStatus": "Verified Active"
-    }
-  ]
-}
-IMPORTANT: Do not hallucinate private personal emails or unlisted phones. Only report real or verified LinkedIn company footprint roles (e.g., Founder, Managing Owner, General Manager).`;
-
-    const resp = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        systemInstruction: "You are a factual B2B LinkedIn auditor. Return pure JSON without markdown tags."
-      }
-    });
-
-    const text = resp.text ? resp.text.trim() : "{}";
-    const parsed = JSON.parse(text.replace(/```json/gi, '').replace(/```/g, '').trim());
-    const citations = resp.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const companyIntelligence = {
-      ...parsed,
-      companyName: typeof parsed.companyName === 'string' ? parsed.companyName : companyName,
-      verifiedSocialFootprint: citations.length > 0 && parsed.verifiedSocialFootprint === true,
-      keyDecisionMakers: citations.length > 0 && Array.isArray(parsed.keyDecisionMakers) ? parsed.keyDecisionMakers : [],
-      summary: citations.length > 0
-        ? parsed.summary
-        : 'No grounding citations were returned; LinkedIn company and decision-maker details are unverified.',
-    };
-
-    res.json({
-      companyIntelligence,
-      citations,
-      source: "gemini",
-      warning: citations.length > 0 ? undefined : "No grounding citations were returned; treat LinkedIn details as unverified.",
-    });
-  } catch (err: any) {
-    logEvent('warn', 'linkedin_provider_failed', req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'LinkedIn intelligence is temporarily unavailable.'));
-    }
-    const cleanName = (companyName || 'Local Enterprise').trim();
-    res.json({
-      companyIntelligence: {
-        companyName: cleanName,
-        employeeCountRange: "Not publicly listed",
-        industry: category || "Local Services & Retail",
-        verifiedSocialFootprint: false,
-        keyDecisionMakers: [],
-        lastAuditedAt: new Date().toISOString(),
-        summary: `Heuristic demo response only for ${cleanName}; no LinkedIn company or decision-maker details were verified.`
-      },
-      source: "heuristic-demo-fallback",
-      warning: "Heuristic demo data only; verify every LinkedIn detail before outreach."
-    });
-  }
+  logEvent('info', 'linkedin_intelligence_unavailable', req, { provider: 'not-configured' });
+  return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'LinkedIn intelligence is not configured. No unverified company or decision-maker data is returned.'));
 });
 
 // --- Web Adaptability & Link Rot Monitor Endpoint ---
@@ -672,195 +296,6 @@ app.post("/api/web-adaptability-check", requirePro(() => db), validateBody(webAd
 });
 
 
-// Fallback pitch generator helper
-function generateFallbackPitch(lead: any, variant = "direct", language = "English") {
-  const isGer = language?.toLowerCase() === "german";
-  const isFre = language?.toLowerCase() === "french";
-  const isSpa = language?.toLowerCase() === "spanish";
-  const isIta = language?.toLowerCase() === "italian";
-
-  let emailSubject = `Modernizing the Digital Presence for ${lead.name} in ${lead.city}`;
-  let emailBody = `Dear ${lead.name} Team,
-
-I'm a professional web developer located nearby, and I recently came across your listing for your outstanding ${lead.category} service. I noticed that online customers looking for you are currently guided solely to third party listings.
-
-By launching a dedicated custom landing page with self-booking, professional custom contact forms, and client reviews, you can instantly turn web visits into revenue.
-
-Would you be open to a brief 5-minute phone call to look at a free visual mockup we designed for you?
-
-Best regards,
-LeadFinder Outreach Consultant`;
-
-  let phoneScript = `Hi there! I was looking up ${lead.category} services in ${lead.city} and came across ${lead.name}. Your local customer reviews look absolutely incredible! 
-
-I noticed that you don't have a direct website online yet for booking/viewing details. I actually design responsive mobile pages for local owners to save them hours on telephone scheduling. If I sent you a quick, free visual draft I made of what your business website could look like, would you be open to taking a look?`;
-
-  let valueProposition = `${lead.name} already commands high local quality. By adding a website, they can automate inquiries, capture search results from google maps, and double their client engagement with an elegant digital portal.`;
-
-  let suggestedFeatures = [
-    "Online Booking & Scheduling Portal",
-    "Mobile-responsive Contact Forms",
-    "Interactive Menu / Portfolios",
-    "Google Maps & Customer Review Slider"
-  ];
-
-  if (variant === "value-first") {
-    emailSubject = `Providing a Free Competitive SEO & SWOT Audit for ${lead.name}`;
-    emailBody = `Dear ${lead.name} Team,
-
-I've put together a complimentary regional SWOT analysis and local SEO rank report for your ${lead.category} business in ${lead.city}. 
-
-Specifically, we identified three major competitor advantages you could easily bypass by adding an independent reservation landing page and direct client review funnels. 
-
-I'd love to send over the full report and live layout mockup. Is there a good email or phone line to send this over?
-
-Best,
-LeadsRadar Specialist`;
-  } else if (variant === "question-based") {
-    emailSubject = `Quick question about local search rankings in ${lead.city} for ${lead.name}`;
-    emailBody = `Dear ${lead.name} Team,
-
-I notice that when customers search for high-quality ${lead.category} services in ${lead.city}, your competitor listings are occupying the top web ranks while your brand is hidden from the map. 
-
-Is this a deliberate choice to limit incoming digital customer flows, or would you be open to a brief look at an automated map rank setup that would place your phone line and booking system directly on the first page?
-
-Best regards,
-Outreach Partner`;
-  } else if (variant === "warm_consultant") {
-    emailSubject = `Loved checking out ${lead.name} in ${lead.city} – quick thought!`;
-    emailBody = `Hi ${lead.name} team! 👋
-
-I was looking through local businesses in ${lead.city} today and your ${lead.category} services really stood out. I love how genuine your customer reviews are!
-
-I did notice one thing that could make life much easier for you and your clients: adding a clean, 24/7 mobile reservation page so customers can book directly without waiting for a callback.
-
-I put together a quick mockup design of what that could look like. Would you be open to taking a peek anytime this week? No pressure at all!
-
-Warmly,
-Your Local Growth Partner`;
-    phoneScript = `Hi there! I was looking at ${lead.name}'s customer reviews today and love what you're doing in ${lead.city}! I noticed you don't have an online booking link yet—I actually built a free demo layout for you so customers can schedule online. Would you be open to checking it out?`;
-  } else if (variant === "direct_founder") {
-    emailSubject = `Founder note: 10x booking conversion for ${lead.name}`;
-    emailBody = `Hi ${lead.name} team,
-
-Direct note from founder to founder: we specialize in helping high-rated ${lead.category} businesses in ${lead.city} turn Google Maps visits into instant booked appointments.
-
-Without a direct booking domain, you are losing ~30% of mobile inquiries to competitors. We build custom pages with zero upfront cost.
-
-Can I send over a 60-second video demo showing how it works?
-
-Best,
-Founder @ LeadsRadar`;
-    phoneScript = `Hey! This is Alex calling real quick. I love ${lead.name}'s reputation in ${lead.city}. I saw you're still relying on phone bookings—we build instant online reservation pages that save owners 5 hours a week. Can I text you our 60-second walkthrough?`;
-  } else if (variant === "local_neighbor") {
-    emailSubject = `Neighbor note for ${lead.name} here in ${lead.city} 🏡`;
-    emailBody = `Hi ${lead.name} team,
-
-I'm a local digital specialist right here in the ${lead.city} area. I've heard great things about your ${lead.category} work!
-
-I love supporting local favorites, and I noticed your Google Maps listing doesn't link out to a direct reservation portal yet. I built a custom, beautiful draft for you as a local courtesy.
-
-Would you have 3 minutes for a quick neighborly chat to see it?
-
-Best,
-Your ${lead.city} Digital Neighbor`;
-    phoneScript = `Hi! I'm a local digital neighbor here in ${lead.city} and love ${lead.name}. I noticed your business didn't have a direct mobile reservation page on Maps—I built a clean prototype for you. Can I share the link with you?`;
-  } else if (variant === "loom_video_script") {
-    emailSubject = `Made a 60-second Loom video walkthrough for ${lead.name} 🎥`;
-    emailBody = `Hi ${lead.name} team,
-
-Instead of a long email, I recorded a quick 60-second video walkthrough showing exactly how customers in ${lead.city} search for ${lead.category} on their phones—and why a simple self-booking page could double your weekend reservations.
-
-[Click here to watch your 60-sec Loom video audit]
-
-Let me know if you'd like me to activate this prototype for you!
-
-Cheers,
-LeadsRadar Specialist`;
-    phoneScript = `Hi there! I just sent a 60-second Loom video to your email showing how a quick mobile booking page can double your weekend reservations. Did you happen to see it yet?`;
-  } else if (variant === "audio_voiceover") {
-    emailSubject = `🎙️ Audio Note: Quick growth tip for ${lead.name}`;
-    emailBody = `Hi ${lead.name} team,
-
-I recorded a short 45-second voice note sharing three ways ${lead.name} can capture more organic map customers in ${lead.city} without spending a dollar on ads.
-
-Key takeaway: adding an instant booking calendar to your profile increases after-hours reservations by 34%.
-
-Would you like me to send over the voice note and live prototype link?
-
-Best regards,
-LeadsRadar Audio Coach`;
-    phoneScript = `Hi! I left a short 45-second voice note for ${lead.name}'s team about automating your weekend bookings. Would it be okay if I texted you the link to listen?`;
-  }
-
-  // Basic localized translations for high-fidelity fallbacks
-  if (isGer) {
-    emailSubject = `Digitalisierung & Online-Buchung für ${lead.name} in ${lead.city}`;
-    if (variant === "value-first") {
-      emailSubject = `Kostenlose SEO- & SWOT-Analyse für Ihr Geschäft: ${lead.name}`;
-    } else if (variant === "question-based") {
-      emailSubject = `Kurze Frage zu Ihren Google-Suchplatzierungen in ${lead.city}`;
-    }
-    emailBody = `Sehr geehrtes Team von ${lead.name},
-
-wir haben eine lokale Wettbewerbsanalyse für Ihr ${lead.category}-Geschäft erstellt. Uns ist aufgefallen, dass Sie noch über keine eigene Website verfügen, wodurch wertvolle Buchungen verloren gehen.
-
-Mit einer eigenen mobilen Website können Sie Ihre Anfragen automatisieren und direkt neue Kunden gewinnen.
-
-Hätten Sie Zeit für ein kurzes 5-Minuten-Telefonat, um unseren kostenlosen Entwurf anzusehen?
-
-Mit freundlichen Grüßen,
-LeadsRadar Partner`;
-    phoneScript = `Hallo! Ich habe nach ${lead.category} in ${lead.city} gesucht und ${lead.name} gefunden. Ihre Bewertungen sind hervorragend! Haben Sie Interesse an einem kurzen Entwurf für eine eigene Buchungswebsite?`;
-    valueProposition = `${lead.name} erzielt bereits hohe lokale Qualität. Mit einer Website können Sie Reservierungen automatisieren und die Sichtbarkeit verdoppeln.`;
-    suggestedFeatures = ["Online-Buchung & Terminkalender", "Mobil-optimiertes Kontaktformular", "Google Maps Bewertungsslider", "Speisekarte / Servicekatalog"];
-  } else if (isFre) {
-    emailSubject = `Moderniser la présence numérique de ${lead.name} à ${lead.city}`;
-    emailBody = `Bonjour à l'équipe de ${lead.name},
-
-Nous avons remarqué que vous n'avez pas de site internet direct pour votre service de ${lead.category} à ${lead.city}. Vous perdez des clients au profit de plateformes tierces.
-
-Avec un site moderne et un système de réservation directe, vous pouvez augmenter votre chiffre d'affaires.
-
-Seriez-vous disponible pour un appel de 5 minutes ?
-
-Cordialement,
-L'équipe LeadsRadar`;
-  } else if (isSpa) {
-    emailSubject = `Modernizar la presencia digital de ${lead.name} en ${lead.city}`;
-    emailBody = `Hola equipo de ${lead.name},
-
-Hemos visitado su negocio de ${lead.category} en ${lead.city} y notamos que no cuenta con un sitio web oficial. Los clientes digitales no pueden reservar directamente.
-
-Con una página web optimizada para móviles, usted podrá recibir reservas automáticas las 24 horas.
-
-¿Tendría 5 minutos para hablar?
-
-Saludos cordiales,
-LeadsRadar`;
-  } else if (isIta) {
-    emailSubject = `Digitalizzazione e prenotazioni online per ${lead.name} a ${lead.city}`;
-    emailBody = `Gentile team di ${lead.name},
-
-Siamo esperti di marketing digitale per attività locali. Abbiamo analizzato la vostra presenza a ${lead.city} per la categoria ${lead.category}. 
-
-Inserendo un sistema di prenotazione diretta e recensioni integrate, potrete raddoppiare i clienti.
-
-Siete liberi per una breve telefonata di 5 minuti?
-
-Cordiali saluti,
-LeadsRadar`;
-  }
-
-  return {
-    emailSubject,
-    emailBody,
-    phoneScript,
-    valueProposition,
-    suggestedFeatures
-  };
-}
-
 // Generate pitch package
 app.post("/api/generate-pitch", requirePro(() => db), validateBody(generatePitchSchema), async (req, res) => {
   const { lead, variant = "direct", language = "English" } = req.body;
@@ -870,12 +305,7 @@ app.post("/api/generate-pitch", requirePro(() => db), validateBody(generatePitch
   }
 
   if (!ai) {
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
-    }
-    const promptValueMock = generateFallbackPitch(lead, variant, language);
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return res.json({ pitch: promptValueMock, source: "mock" });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Pitch generation is temporarily unavailable.'));
   }
 
   try {
@@ -928,11 +358,7 @@ Return strictly a valid raw JSON object matching the following Schema. Do not in
     res.json({ pitch, source: "gemini" });
   } catch (error: any) {
     logEvent('warn', 'pitch_provider_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Pitch generation is temporarily unavailable.'));
-    }
-    const fallbackPitch = generateFallbackPitch(lead, variant, language);
-    res.json({ pitch: fallbackPitch, source: "synthetic-demo-fallback", warning: "Synthetic demo copy only; review every factual claim before sending." });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Pitch generation is temporarily unavailable.'));
   }
 });
 
@@ -1036,7 +462,7 @@ app.post('/api/webhooks/moonpay', async (req, res) => {
   }
 });
 
-// Pro Mode: Generate Broader SEO & SWOT Competitor Analysis
+// Pro Mode: Generate clearly labeled strategy hypotheses from supplied lead fields
 app.post("/api/generate-analysis", requirePro(() => db), validateBody(generateAnalysisSchema), async (req, res) => {
   const { lead } = req.body;
 
@@ -1044,83 +470,36 @@ app.post("/api/generate-analysis", requirePro(() => db), validateBody(generateAn
     return sendApiError(res, req, new ApiError(400, 'VALIDATION_ERROR', 'Lead object is required.'));
   }
 
-  const mockCompetitors = [
-    { 
-      name: `${lead.name} Rivals Hub`, 
-      website: `https://best-${lead.category.replace(/\s+/g, "").toLowerCase()}-${lead.city.toLowerCase()}.com`, 
-      missedAdvantage: "Features premium customized appointment form and ranks first on Search Engine Local Pack." 
-    },
-    { 
-      name: `Elite ${lead.category} Lounge`, 
-      website: `https://elite-${lead.category.replace(/\s+/g, "").toLowerCase()}.com`, 
-      missedAdvantage: "Operates digital reservation portal which increases weekly client conversion rate by 28%." 
-    },
-    { 
-      name: `The Local ${lead.category} Co.`, 
-      website: `https://thelocal${lead.category.replace(/\s+/g, "").toLowerCase()}${lead.city.toLowerCase()}.de`, 
-      missedAdvantage: "Presents direct contact funnel synced with automated SMS reminder lines." 
-    }
-  ];
+
 
   if (!ai) {
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
-    }
-    // Generate static comprehensive fallback structure
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return res.json({
-      analysis: {
-        swot: {
-          strengths: [`Established physical space with high ratings in ${lead.city}`, "Commanding organic local community standing"],
-          weaknesses: ["Total lack of brand website, causing high search friction", "No digitized table bookings or service catalog"],
-          opportunities: ["Google Maps Local Pin visibility SEO optimization", "Deploying custom scheduling calendar landing page"],
-          threats: ["Digital-ready local competitors taking high-value online inquiries"]
-        },
-        seoMetrics: {
-          estimatedMonthlyMissedTraffic: "200 - 450 targeted local searches",
-          estimatedBookingLossRevenue: "$1,200 - $3,000 / month",
-          competitorCount: "approx. 7 nearby listings with active web booking",
-          rankDifficulty: "Low-Medium (Page 1 ranking achievable in under 15 days)"
-        },
-        digitalStrategy: `Build an elegant, high-speed single-page site featuring local grid highlights, a streamlined reservation widget, and responsive mobile scheduling.`,
-        competitors: mockCompetitors
-      },
-      source: "synthetic-demo-fallback",
-      warning: "Synthetic demo data only; no live business details were verified."
-    });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Analysis service is temporarily unavailable.'));
   }
 
   try {
-    const prompt = `Perform a comprehensive B2B Local Marketing SWOT analysis and SEO Audit for:
+        const prompt = `Generate strategy hypotheses and validation questions for the supplied lead fields.
 Business Name: ${lead.name}
 Category: ${lead.category}
 City: ${lead.city}
 Specific Context: ${lead.notes}
-
-Provide highly realistic estimations for regional search traffic loss and specific SWOT items.
-Only include competitors that are explicitly supported by the available evidence. If competitor identities or domains cannot be verified, return an empty competitors array and explain that limitation; never invent, fabricate, or label realistic examples as actual competitors.
-
+Use only the explicit fields supplied in the lead object as inputs. Do not infer or assert facts about the business, its customers, rankings, revenue, traffic, reviews, competitors, website, or online presence. Do not create competitor identities or URLs. All measurement fields must be the literal string "Not measured" and competitors must be an empty array.
 Return strictly a valid raw JSON object. Do not include markdown wraps, ticks or text wrapping.
 Strict Schema:
 {
   "swot": {
-    "strengths": ["...", "...", "..."],
-    "weaknesses": ["...", "...", "..."],
-    "opportunities": ["...", "...", "..."],
-    "threats": ["...", "...", "..."]
+    "strengths": ["hypothesis"],
+    "weaknesses": ["validation question"],
+    "opportunities": ["hypothesis"],
+    "threats": ["risk to validate"]
   },
   "seoMetrics": {
-    "estimatedMonthlyMissedTraffic": "...",
-    "estimatedBookingLossRevenue": "...",
-    "competitorCount": "...",
-    "rankDifficulty": "..."
+    "estimatedMonthlyMissedTraffic": "Not measured",
+    "estimatedBookingLossRevenue": "Not measured",
+    "competitorCount": "Not measured",
+    "rankDifficulty": "Not measured"
   },
-  "digitalStrategy": "...",
-  "competitors": [
-    { "name": "...", "website": "https://...", "missedAdvantage": "..." },
-    { "name": "...", "website": "https://...", "missedAdvantage": "..." },
-    { "name": "...", "website": "https://...", "missedAdvantage": "..." }
-  ]
+  "digitalStrategy": "guidance only",
+  "competitors": []
 }`;
 
     const response = await ai.models.generateContent({
@@ -1140,36 +519,27 @@ Strict Schema:
       analysis = JSON.parse(cleanText);
     }
 
-    if (!analysis.competitors) {
-      analysis.competitors = mockCompetitors;
-    }
+    const safeAnalysis = {
+      ...analysis,
+      seoMetrics: {
+        estimatedMonthlyMissedTraffic: 'Not measured',
+        estimatedBookingLossRevenue: 'Not measured',
+        competitorCount: 'Not measured',
+        rankDifficulty: 'Not measured',
+      },
+      competitors: [],
+      dataQuality: 'generated-guidance',
+      evidenceBacked: false,
+    };
 
-    res.json({ analysis, source: "gemini" });
+    res.json({
+      analysis: safeAnalysis,
+      source: "gemini-generated-guidance",
+      warning: "Generated strategy only. Traffic, revenue, ranking, review, and competitor facts were not independently measured or verified.",
+    });
   } catch (error: any) {
     logEvent('warn', 'analysis_provider_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Analysis service is temporarily unavailable.'));
-    }
-    res.json({
-      analysis: {
-        swot: {
-          strengths: [`High local reputation index inside ${lead.city}`, "Exceptional word-of-mouth backing"],
-          weaknesses: ["Zero online search discoverability without organic domain", "Relying purely on phone callbacks leading to schedule leaks"],
-          opportunities: ["Localized maps indexing SEO rankings", "Custom mobile-first appointment booking form"],
-          threats: ["Search keywords captured by modern-styled competitors"]
-        },
-        seoMetrics: {
-          estimatedMonthlyMissedTraffic: "350+ missed digital opportunities",
-          estimatedBookingLossRevenue: "$2,000+ monthly loss margin",
-          competitorCount: "approx. 5 modern competitors in the neighborhood",
-          rankDifficulty: "Low"
-        },
-        digitalStrategy: "Present a working visual site draft demonstrating scheduled notification triggers to easily overcome typical objection patterns.",
-        competitors: mockCompetitors
-      },
-      source: "synthetic-demo-fallback",
-      warning: "Synthetic demo analysis only; competitor and metric claims require independent verification."
-    });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Analysis service is temporarily unavailable.'));
   }
 });
 
@@ -1185,26 +555,15 @@ app.post("/api/chat-assistant", requirePro(() => db), validateBody(chatAssistant
 You are helping a web designer or salesperson pitch an online presence, responsive landing page, or appointment scheduler to '${lead.name}', a local '${lead.category}' provider in '${lead.city}'.
 
 When answering:
-- Address objection handling strategically (e.g., 'A website takes too much maintenance', 'I am already busy with offline work').
-- Craft custom email sections, social scripts, or interactive text messages.
-- Suggest realistic pricing models, tiered delivery options, and value-demonstration scripts.
-- Speak directly, action-oriented, professional, and friendly. Avoid general or generic advice; always tailor suggestions to this brand's physical service niche and neighborhood context. Keep markdown formatting pristine.`;
+- Use only facts explicitly present in the supplied lead object or conversation.
+- Treat every business fact as unverified unless it includes source evidence in the lead data.
+- Offer hypotheses, questions, and recommendations, not claims about ratings, revenue, traffic, rankings, customers, or competitor activity.
+- Never invent contact details, reviews, business history, performance metrics, or completed audits.
+- Craft custom email sections, social scripts, or interactive text messages without implying that an audit or contact has already occurred.
+- Speak directly, action-oriented, professional, and friendly. Keep markdown formatting pristine.`;
 
   if (!ai) {
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'AI service is temporarily unavailable.'));
-    }
-    // Return friendly sandbox AI simulated response
-    await new Promise(resolve => setTimeout(resolve, 800));
-    const lastMsg = messages[messages.length - 1]?.content || "";
-    const reply = `🤖 **[Sandbox Coach Active]** Understood! Pitching a **${lead.category}** like *${lead.name}* in *${lead.city}* requires handling specific fears. 
-
-If they respond with *"I don't need a site, I'm already booked solid from word-of-mouth"*, instruct them with this script:
-
-> "I love that! Word of mouth means you do great work. But how much time do you spend answering simple questions about pricing, location, or available booking times? Let's automate that with a simple 1-page landing system and free up 10 hours a week for your actual crafts."
-
-What specific objection or pricing strategy would you like us to detail next?`;
-    return res.json({ reply, source: "mock" });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Assistant service is temporarily unavailable.'));
   }
 
   try {
@@ -1221,17 +580,13 @@ What specific objection or pricing strategy would you like us to detail next?`;
       }
     });
 
-    res.json({ reply: response.text || "Assistant computed blank, please try again.", source: "gemini" });
+    if (!response.text?.trim()) {
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Assistant service returned no guidance.'));
+    }
+    res.json({ reply: response.text.trim(), source: "gemini-generated-guidance", evidenceBacked: false });
   } catch (error: any) {
     logEvent('warn', 'assistant_provider_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
-    if (!runtimeConfig.allowDemoMode) {
-      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Assistant service is temporarily unavailable.'));
-    }
-    res.json({
-      reply: `Sandbox assistant fallback: review this draft against the lead’s verified facts before use.`,
-      source: "synthetic-demo-fallback",
-      warning: "Synthetic demo response only; no factual business claims were verified."
-    });
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Assistant service is temporarily unavailable.'));
   }
 });
 
@@ -1356,29 +711,7 @@ app.post("/api/gmail/check-replies", requirePro(() => db), validateBody(gmailRep
     const data = userSnap.data();
     const integration = integrationSnap.data();
     
-    // Handle Outlook Sandbox fallback if Outlook connected
-    if (data.outlookConnected && leadEmail.includes(".local")) {
-      const simulatedReply = `Hi, thank you for reaching out! Your portfolio draft looks impressive. We are quite busy but could find 10 minutes next Tuesday at 2 PM for a quick phone call. Let me know if that works.`;
-      
-      const suggestionsPrompt = `The customer sent this reply email to us: "${simulatedReply}".
-Craft a short, polite, professional follow-up suggestion confirming next Tuesday at 2 PM as a suggested answer for the web designer.
-Write only the email body response, and keep it friendly and short.`;
-      
-      let suggestedAnswer = "Hi, that sounds perfect! I've booked our meeting for next Tuesday, May 30th at 2:00 PM. Looking forward to speaking with you then!";
-      if (ai) {
-        const aiRes = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: suggestionsPrompt,
-        });
-        suggestedAnswer = aiRes.text || suggestedAnswer;
-      }
-      
-      return res.json({ 
-        hasReply: true, 
-        replySnippet: simulatedReply, 
-        suggestedReply: suggestedAnswer 
-      });
-    }
+
 
     if (!data?.gmailConnected || !integrationSnap.exists || !integration?.encryptedToken) {
       return res.json({ hasReply: false });
@@ -1412,28 +745,30 @@ Write only the email body response, and keep it friendly and short.`;
     const msgData = await msgResponse.json() as any;
     const replySnippet = msgData.snippet || "";
     
+    if (!ai) {
+      return res.json({ hasReply: true, replySnippet, suggestedReply: null, guidanceAvailable: false });
+    }
+
     const suggestionsPrompt = `You are an expert Sales Coach advising on B2B lead follow-up. The client sent this email in response:
 Snippet: "${replySnippet}"
 
-Craft a professional, friendly response that builds rapport and advances the sale. State the direct reply body. Limit it to 3-4 simple sentences.`;
-    
-    let suggestedReply = "Hi, thanks for getting back to me! I would love to connect for a 5-minute chat. Would this Friday at 11 AM work for you, or is there another date you prefer?";
-    if (ai) {
-      try {
-        const aiResponse = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: suggestionsPrompt,
-        });
-        suggestedReply = aiResponse.text || suggestedReply;
-      } catch (aiErr) {
-        console.error("Gemini AI reply helper failure:", aiErr);
-      }
+Craft a professional, friendly response that builds rapport and advances the sale. Do not invent facts, commitments, dates, prices, or actions. Limit it to 3-4 simple sentences.`;
+    let suggestedReply: string | null = null;
+    try {
+      const aiResponse = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: suggestionsPrompt,
+      });
+      suggestedReply = aiResponse.text || null;
+    } catch (aiErr) {
+      logEvent('warn', 'gmail_reply_guidance_unavailable', req, { errorName: aiErr instanceof Error ? aiErr.name : 'UnknownError' });
     }
-    
-    res.json({ 
-      hasReply: true, 
-      replySnippet, 
-      suggestedReply 
+
+    res.json({
+      hasReply: true,
+      replySnippet,
+      suggestedReply,
+      guidanceAvailable: Boolean(suggestedReply),
     });
   } catch (err: any) {
     logEvent('error', 'gmail_reply_check_failed', req, { errorName: err instanceof Error ? err.name : 'UnknownError' });

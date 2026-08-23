@@ -16,10 +16,9 @@ import LeadCard, { LeadCardSkeleton } from './components/LeadCard';
 import { checkGuestSearchLimit, checkGuestSaveLimit } from './services/guestAuditService';
 import { AuthProvider, useAuth } from './components/AuthProvider';
 import { AuthView } from './components/AuthView';
-import { PREPOPULATED_LEADS } from './seedData';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { apiFetch } from './apiClient';
-import { sanitizeLeadArray } from './utils/leadSanitizer';
+import { isDisplayableLead, sanitizeLeadArray, sanitizeLeadContact } from './utils/leadSanitizer';
 // @ts-ignore
 import brandLogo from './assets/images/logo_1779885424761.png';
 import { 
@@ -45,7 +44,7 @@ function AppContent() {
     setPersistenceError(message);
   };
   
-  const [config, setConfig] = useState<{ hasApiKey: boolean; message: string }>({ hasApiKey: false, message: '' });
+  const [config, setConfig] = useState<{ discoveryProvider: string; discoveryAvailable: boolean; guidanceAvailable: boolean; message: string }>({ discoveryProvider: 'google-places-api', discoveryAvailable: false, guidanceAvailable: false, message: '' });
   
   // Subscription management states
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
@@ -53,7 +52,7 @@ function AppContent() {
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
   useEffect(() => {
-    document.title = "LeadsRadar | AI-Driven Outreach Lead Generator";
+    document.title = "LeadsRadar | Evidence-first lead workspace";
     
     // Set favicon dynamically
     let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
@@ -106,7 +105,7 @@ function AppContent() {
     try {
       const cachedLeads = localStorage.getItem(fallbackLeadsKey);
       if (cachedLeads) {
-        setLeads(sanitizeLeadArray(JSON.parse(cachedLeads)));
+        setLeads(sanitizeLeadArray(JSON.parse(cachedLeads)).filter(isDisplayableLead));
       }
       const cachedQueries = localStorage.getItem(fallbackQueriesKey);
       if (cachedQueries) {
@@ -127,7 +126,7 @@ function AppContent() {
       // Sort chronological descending
       loadedLeads.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
-      const sanitizedLeads = sanitizeLeadArray(loadedLeads);
+      const sanitizedLeads = sanitizeLeadArray(loadedLeads).filter(isDisplayableLead);
       try {
         localStorage.setItem(fallbackLeadsKey, JSON.stringify(sanitizedLeads));
       } catch (err) {
@@ -187,7 +186,7 @@ function AppContent() {
       category,
       discoveredCount,
       source,
-      platforms: platforms || ['Google Maps', 'Yelp', 'LinkedIn', 'Trustpilot'],
+      platforms: platforms || ['Google Places API'],
       timestamp: new Date().toISOString()
     };
 
@@ -210,7 +209,7 @@ function AppContent() {
     }
   };
 
-  // Add new crawl discoveries directly to user Firestore db
+  // Persist provider discoveries as client-provided records; server authority is not forged in the browser
   const handleLeadsDiscovered = async (newLeads: BusinessLead[], source: string) => {
     if (!user) return;
     const searchCheck = checkGuestSearchLimit();
@@ -221,24 +220,22 @@ function AppContent() {
     }
 
     const formattedDiscoveries = sanitizeLeadArray(newLeads.map((newL, index) => {
-      const leadId = newL.id || `lead_crawl_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 5)}`;
-      return {
+      const leadId = newL.id
+        || (newL.sourceId ? `lead_google_${newL.sourceId.replace(/[^a-zA-Z0-9_-]/g, '_')}` : `lead_import_${Date.now()}_${index}`);
+      return sanitizeLeadContact({
         ...newL,
         id: leadId,
         ownerId: user.uid,
         status: newL.status || 'new',
         createdAt: newL.createdAt || new Date().toISOString(),
-        activityLog: newL.activityLog || [
-          {
-            id: `log_crawler_${Date.now()}_${index}`,
-            type: 'note' as const,
-            timestamp: new Date().toISOString(),
-            title: 'Discovered via Search Grounding',
-            detail: `Prospect index fetched from web crawl sources (${source}).`
-          }
-        ]
-      };
-    }));
+        activityLog: newL.activityLog || [],
+        evidenceAuthority: 'client-provided',
+        verified: false,
+        dataQuality: 'provided',
+        verificationScore: 0,
+        verificationSummary: `Source metadata supplied by the ${source || 'discovery'} response. Review the linked provider record before outreach.`,
+      });
+    })).filter(isDisplayableLead);
 
     const uniqueDiscoveries = formattedDiscoveries.filter((candidate, index, all) => {
       const duplicateInCurrentState = leads.some((existing) =>
@@ -287,10 +284,15 @@ function AppContent() {
       setIsSecurityModalOpen(true);
       return;
     }
-    const fullLead = {
+    const fullLead = sanitizeLeadContact({
       ...newLead,
-      ownerId: user.uid
-    };
+      ownerId: user.uid,
+      evidenceAuthority: 'user-provided',
+      verificationMethod: 'user-provided',
+      verified: false,
+      dataQuality: 'provided',
+      verificationScore: 0,
+    });
 
     const previousLeads = leads;
     setLeads(prev => [fullLead, ...prev]);
@@ -309,10 +311,20 @@ function AppContent() {
   // Updates parameters on selected B2B detail sheet (notes, outreach pitches...)
   const handleUpdateLead = async (updatedLead: BusinessLead) => {
     if (!user) return;
-    const fullLead = {
+    const existingLead = leads.find((lead) => lead.id === updatedLead.id);
+    const mayPreserveServerAuthority = existingLead?.evidenceAuthority === 'server-provider'
+      && updatedLead.evidenceAuthority === 'server-provider';
+    const fullLead = sanitizeLeadContact({
       ...updatedLead,
-      ownerId: user.uid
-    };
+      ownerId: user.uid,
+      evidenceAuthority: mayPreserveServerAuthority
+        ? 'server-provider'
+        : updatedLead.evidenceAuthority === 'user-provided'
+          ? 'user-provided'
+          : 'client-provided',
+      verified: mayPreserveServerAuthority,
+      dataQuality: mayPreserveServerAuthority ? 'verified' : 'provided',
+    });
 
     const previousLeads = leads;
     const previousSelectedLead = selectedLead;
@@ -374,36 +386,25 @@ function AppContent() {
     }
   };
 
-  // Purge personalized space and re-sync seed items
+  // Purge the current user's workspace without creating replacement data.
   const handlePurgeDatabase = async () => {
     if (!user) return;
-    if (window.confirm("Are you sure you want to reset your personalized sales database? This will delete all customized scan and manual logs created under your account, and re-populate the standard seed prospects.")) {
+    if (window.confirm("Are you sure you want to delete all leads and search history in this workspace? This action cannot be undone.")) {
       setSyncing(true);
       try {
         const batch = writeBatch(db);
-        
-        // Fetch all current user's leads first
         const leadsQuery = query(collection(db, 'leads'), where('ownerId', '==', user.uid));
-        const qSnap = await getDocs(leadsQuery);
-        qSnap.forEach((docSnap) => {
-          batch.delete(docSnap.ref);
-        });
-
-        // Seed fresh prepopulated items
-        for (const item of PREPOPULATED_LEADS) {
-          const freshId = `seed_${item.id}_${user.uid}`;
-          const seedRef = doc(db, 'leads', freshId);
-          batch.set(seedRef, {
-            ...item,
-            id: freshId,
-            ownerId: user.uid,
-            createdAt: new Date().toISOString()
-          });
-        }
-
+        const queriesQuery = query(collection(db, 'queries'), where('userId', '==', user.uid));
+        const [leadSnapshot, querySnapshot] = await Promise.all([getDocs(leadsQuery), getDocs(queriesQuery)]);
+        leadSnapshot.forEach((docSnap) => batch.delete(docSnap.ref));
+        querySnapshot.forEach((docSnap) => batch.delete(docSnap.ref));
         await batch.commit();
+        localStorage.removeItem(`fallback_leads_${user.uid}`);
+        localStorage.removeItem(`fallback_queries_${user.uid}`);
+        setLeads([]);
+        setPastQueries([]);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'leads');
+        handleFirestoreError(err, OperationType.WRITE, 'workspace');
       } finally {
         setSyncing(false);
       }
@@ -762,11 +763,11 @@ function AppContent() {
       {/* Main Container screen content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         
-         {/* TOP COMPONENT: Search Discover Crawler (only shown on Dashboard tab) */}
+         {/* TOP COMPONENT: Provider-backed search scanner (only shown on Dashboard tab) */}
         {viewTab === 'leads' && (
           <SearchScanner 
             onLeadsDiscovered={handleLeadsDiscovered}
-            isDemoMode={!config.hasApiKey}
+            discoveryAvailable={config.discoveryAvailable}
             onSaveQuery={handleSaveSearchQuery}
             pastQueries={pastQueries}
             onUpgradeClick={() => setIsSubscriptionModalOpen(true)}
@@ -968,7 +969,7 @@ function AppContent() {
                 </div>
                 <h3 className="font-bold text-white text-base">No Matching Web Prospects Found</h3>
                 <p className="text-xs text-zinc-500 max-w-sm mx-auto mt-1 leading-relaxed">
-                  Adjust active filter toggles, clear query inputs, or deploy a new region search crawler query above to enroll new accounts.
+                  Adjust the filters or run a new provider query above to add records.
                 </p>
               </div>
             ) : (
@@ -1051,7 +1052,7 @@ function AppContent() {
                 </span>
               </div>
               <p className="text-xs text-zinc-400 leading-relaxed max-w-sm">
-                AI-driven local business intelligence & automated zero-hallucination B2B outreach engine. Designed to discover real brick-and-mortar prospects needing a modern web presence.
+                Evidence-first local business workspace. Provider records and user-provided leads remain separate from optional generated outreach guidance.
               </p>
               <div className="inline-flex items-center gap-2 bg-zinc-900/80 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs">
                 <span className="relative flex h-2 w-2">
@@ -1114,8 +1115,8 @@ function AppContent() {
                 <div className="flex items-start gap-2.5 bg-zinc-900/60 border border-zinc-800/80 p-2.5 rounded-xl text-xs">
                   <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                   <div>
-                    <div className="font-semibold text-white">Zero-Hallucination Search Grounding</div>
-                    <div className="text-[11px] text-zinc-400">Verified real-time public telephone numbers & directories only.</div>
+                    <div className="font-semibold text-white">Provider-sourced lead records</div>
+                    <div className="text-[11px] text-zinc-400">Google Places records are source-linked at retrieval time; missing contacts are not inferred.</div>
                   </div>
                 </div>
                 <div className="flex items-start gap-2.5 bg-zinc-900/60 border border-zinc-800/80 p-2.5 rounded-xl text-xs">

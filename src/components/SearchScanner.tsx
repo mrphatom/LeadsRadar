@@ -11,20 +11,13 @@ import SearchHistoryModal from './SearchHistoryModal';
 
 interface SearchScannerProps {
   onLeadsDiscovered: (newLeads: BusinessLead[], source: string, citations?: any[]) => void;
-  isDemoMode: boolean;
+  discoveryAvailable: boolean;
   onSaveQuery: (city: string, country: string, category: string, discoveredCount: number, source: string, platforms?: string[]) => void;
   pastQueries: any[];
   onUpgradeClick: () => void;
 }
 
-const AVAILABLE_PLATFORMS = [
-  { id: 'Google Maps', label: 'Google Maps', icon: '📍' },
-  { id: 'Yelp', label: 'Yelp', icon: '⭐' },
-  { id: 'LinkedIn', label: 'LinkedIn', icon: '💼' },
-  { id: 'Trustpilot', label: 'Trustpilot', icon: '🛡️' },
-  { id: 'Facebook Business', label: 'Facebook Business', icon: '📘' },
-  { id: 'YellowPages', label: 'YellowPages', icon: '📒' }
-];
+const DISCOVERY_PROVIDER_LABEL = 'Google Places API';
 
 const COMMON_NICHES = [
   'Bakery',
@@ -49,7 +42,7 @@ const DEFAULT_CITIES: Record<CountryType, string[]> = {
   Canada: ['Toronto', 'Vancouver', 'Montreal', 'Calgary', 'Ottawa']
 };
 
-export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQuery, pastQueries, onUpgradeClick }: SearchScannerProps) {
+export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, onSaveQuery, pastQueries, onUpgradeClick }: SearchScannerProps) {
   const { profile } = useAuth();
   const [scannerTab, setScannerTab] = useState<'scan' | 'updater'>('scan');
   
@@ -76,15 +69,13 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
 
   // Weekly Sync/Scheduler states
   const [schedulerActive, setSchedulerActive] = useState<boolean>(false);
-  const [onlyGoodReviews, setOnlyGoodReviews] = useState<boolean>(true);
-  const [newlyAddedOnly, setNewlyAddedOnly] = useState<boolean>(true);
   const [selectedCities, setSelectedCities] = useState<string[]>(['Austin', 'London', 'Munich', 'Toronto']);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [nextSyncTime, setNextSyncTime] = useState<string>('');
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [syncProgress, setSyncProgress] = useState<number>(0);
   const [isSyncingAll, setIsSyncingAll] = useState<boolean>(false);
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['Google Maps', 'Yelp', 'LinkedIn', 'Trustpilot']);
+  const selectedPlatforms = [DISCOVERY_PROVIDER_LABEL];
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
@@ -93,21 +84,11 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
     setNextSyncTime(localStorage.getItem(`radar_next_sync_time_${profile.uid}`) || '');
   }, [profile?.uid]);
 
-  const togglePlatform = (pId: string) => {
-    if (selectedPlatforms.includes(pId)) {
-      if (selectedPlatforms.length > 1) {
-        setSelectedPlatforms(selectedPlatforms.filter(p => p !== pId));
-      }
-    } else {
-      setSelectedPlatforms([...selectedPlatforms, pId]);
-    }
-  };
-
   const handleRerunQuery = async (queryItem: any) => {
     const targetCountry = queryItem.country || 'USA';
     const targetCity = queryItem.city || 'Austin';
     const targetCategory = queryItem.category || 'Bakery';
-    const targetPlatforms = queryItem.platforms || ['Google Maps', 'Yelp', 'LinkedIn', 'Trustpilot'];
+    const targetPlatforms = selectedPlatforms;
 
     setCountry(targetCountry);
     setCity(targetCity);
@@ -117,8 +98,6 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       setCategory('Custom');
       setCustomCategory(targetCategory);
     }
-    setSelectedPlatforms(targetPlatforms);
-
     setLoading(true);
     setError(null);
     setSuccessCount(null);
@@ -137,22 +116,22 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       });
 
       if (!response.ok) {
-        throw new Error('Search agent failed to retrieve listings.');
+        throw new Error('Google Places provider request failed; no unverified results were imported.');
       }
 
       const data = await response.json();
       if (data.leads && Array.isArray(data.leads)) {
         if (data.leads.length === 0) {
-          setError(`No offline businesses matching "${targetCategory}" were found in ${targetCity}.`);
+          setError(`No eligible ${DISCOVERY_PROVIDER_LABEL} records matching "${targetCategory}" were returned in ${targetCity}.`);
         } else {
           onLeadsDiscovered(data.leads, data.source, data.citations);
           setSuccessCount(data.leads.length);
           setScanSource(data.source || null);
-          onSaveQuery(targetCity, targetCountry, targetCategory, data.leads.length, data.source || 'google-search-grounding', targetPlatforms);
+          onSaveQuery(targetCity, targetCountry, targetCategory, data.leads.length, data.source || 'google-places-api', targetPlatforms);
         }
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred while re-running discovery crawl.');
+      setError(err.message || 'An error occurred while re-running the provider search.');
     } finally {
       setLoading(false);
     }
@@ -177,6 +156,12 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
     setSuccessCount(null);
     setScanSource(null);
 
+    if (!discoveryAvailable) {
+      setError('Real lead discovery is unavailable because the server-side Google Places provider is not configured. No synthetic results are shown.');
+      setLoading(false);
+      return;
+    }
+
     // Enforce subscription limits
     if (limitReached) {
       setError(`Daily scan limit reached! Free users are capped at 10 searches per day, while Pro packages support up to 20 daily scans.`);
@@ -184,8 +169,6 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       return;
     }
     
-    // Explicit instructions for fresh, recently opened or newest businesses
-    const isSeekingNewer = newlyAddedOnly;
     const finalCategory = category === 'Custom' ? customCategory : category;
     if (!finalCategory.trim()) {
       setError('Please provide a business niche/category.');
@@ -193,17 +176,12 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       return;
     }
 
-    // Embed "newer recently added with good reputation" signals into parameters
-    const searchCategoryQuery = isSeekingNewer 
-      ? `newly opened, recently listed ${finalCategory} with excellent organic ratings and offline profile`
-      : finalCategory;
-
     const steps = [
-      `Initializing Google Grounded crawler for ${country}...`,
-      `Scanning public listings in ${city} for ${isSeekingNewer ? 'fresh newer businesses' : 'webless storefronts'}...`,
-      `Filtering for missing domains & verifying organic customer reviews...`,
-      `Checking local dialing registry records and emails...`,
-      `Enrolling newly discovered prospect profiles into dashboard accounts...`
+      `Requesting structured places from ${DISCOVERY_PROVIDER_LABEL}...`,
+      `Searching ${city}, ${country} for ${finalCategory}...`,
+      'Filtering permanently closed places and records with a website listed by the provider...',
+      'Keeping only fields returned by the provider; missing contacts stay unlisted.',
+      'Preparing provider-cited records for your workspace...'
     ];
 
     let stepIndex = 0;
@@ -222,13 +200,13 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
         body: JSON.stringify({
           country,
           city,
-          category: searchCategoryQuery,
+          category: finalCategory,
           platforms: selectedPlatforms
         })
       });
 
       if (!response.ok) {
-        throw new Error('Search agent failed to retrieve listings.');
+        throw new Error('Google Places provider request failed; no unverified results were imported.');
       }
 
       const data = await response.json();
@@ -236,17 +214,12 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
 
       if (data.leads && Array.isArray(data.leads)) {
         if (data.leads.length === 0) {
-          setError(`No offline businesses matching "${finalCategory}" were found in ${city}. Try switching city coordinates or searching for recently opened establishments.`);
+          setError(`No eligible ${DISCOVERY_PROVIDER_LABEL} records matching "${finalCategory}" were returned in ${city}.`);
         } else {
-          // Add a custom marker to notes indicating it's a recent search with good rating
-          const markedLeads = data.leads.map(lead => ({
-            ...lead,
-            notes: `${lead.notes}${isSeekingNewer ? ' [Recently listed business parsed with high organic rating background]' : ''}`
-          }));
-          onLeadsDiscovered(markedLeads, data.source, data.citations);
+          onLeadsDiscovered(data.leads, data.source, data.citations);
           setSuccessCount(data.leads.length);
           setScanSource(data.source || null);
-          onSaveQuery(city, country, finalCategory, data.leads.length, data.source || 'google-search-grounding', selectedPlatforms);
+          onSaveQuery(city, country, finalCategory, data.leads.length, data.source || 'google-places-api', selectedPlatforms);
         }
       } else {
         throw new Error('Invalid response structure received from server.');
@@ -273,7 +246,13 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       setSyncLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
     };
 
-    logging("Preparing a manual weekly scan plan for this browser session...");
+    if (!discoveryAvailable) {
+      setSyncLogs(['[ERROR] Google Places discovery is not configured. No synthetic records will be generated.']);
+      setIsSyncingAll(false);
+      return;
+    }
+
+    logging("Preparing a manual provider search plan for this browser session...");
     await new Promise(r => setTimeout(r, 600));
     setSyncProgress(15);
 
@@ -281,15 +260,14 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
     await new Promise(r => setTimeout(r, 500));
     setSyncProgress(25);
 
-    logging(`Filtering criteria: Lacks website, ${onlyGoodReviews ? 'High organic rating background (4.0+ Stars)' : 'Any reviews'}${newlyAddedOnly ? ', Prioritizing newly listed businesses' : ''}`);
+    logging('Provider filter: permanently closed places excluded; records with a listed website excluded.');
     await new Promise(r => setTimeout(r, 600));
     setSyncProgress(35);
 
     let totalAdded = 0;
     const activeCategory = category === 'Custom' ? (customCategory || 'Cafe') : category;
     
-    // Explicit search instruction for newer, recently listed businesses with good background ratings
-    const syncCategory = `${newlyAddedOnly ? 'recently opened and newly listed ' : ''}${activeCategory}${onlyGoodReviews ? ' with top ratings' : ''}`;
+    const syncCategory = activeCategory;
 
     for (let i = 0; i < selectedCities.length; i++) {
       const currentCity = selectedCities[i];
@@ -304,7 +282,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
         targetCountry = 'Canada';
       }
 
-      logging(`[CRAWL] Searching for "${syncCategory}" in ${currentCity}, ${targetCountry}...`);
+      logging(`[SEARCH] Querying Google Places for "${syncCategory}" in ${currentCity}, ${targetCountry}...`);
       setSyncProgress(35 + Math.floor((i / selectedCities.length) * 55));
       await new Promise(r => setTimeout(r, 800));
 
@@ -315,26 +293,23 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
           body: JSON.stringify({
             country: targetCountry,
             city: currentCity,
-            category: syncCategory
+            category: syncCategory,
+            platforms: selectedPlatforms
           })
         });
 
         if (response.ok) {
           const data = await response.json();
           if (data.leads && Array.isArray(data.leads) && data.leads.length > 0) {
-            const markedLeads = data.leads.map(lead => ({
-              ...lead,
-              notes: `${lead.notes} [Synced during manual freshness scan on ${new Date().toLocaleDateString()}]`
-            }));
-            onLeadsDiscovered(markedLeads, data.source || 'weekly-sync');
-            logging(`[SAVED] Discovered and synced ${data.leads.length} premium prospects for ${currentCity}!`);
+            onLeadsDiscovered(data.leads, data.source || DISCOVERY_PROVIDER_LABEL, data.citations);
+            logging(`[SAVED] Added ${data.leads.length} provider records for ${currentCity}.`);
             totalAdded += data.leads.length;
-            onSaveQuery(currentCity, targetCountry, activeCategory, data.leads.length, `weekly-sync-${data.source}`);
+            onSaveQuery(currentCity, targetCountry, activeCategory, data.leads.length, data.source || 'google-places-api', selectedPlatforms);
           } else {
-            logging(`[SKIP] No new storefronts registered without website in ${currentCity} this week.`);
+            logging(`[SKIP] No eligible provider records returned in ${currentCity}.`);
           }
         } else {
-          logging(`[WARN] Sync connection timeout for ${currentCity}.`);
+            logging(`[WARN] Provider request failed for ${currentCity}.`);
         }
       } catch (err) {
         logging(`[ERROR] Sync connection error on ${currentCity}: ${err}`);
@@ -350,7 +325,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
     localStorage.setItem(`radar_last_sync_time_${schedulerStorageKey}`, nowStr);
     localStorage.setItem(`radar_next_sync_time_${schedulerStorageKey}`, nextStr);
 
-    logging(`Manual update completed. Discovered ${totalAdded} prospects across active territories.`);
+    logging(`Manual provider update completed. Added ${totalAdded} records across active territories.`);
     await new Promise(r => setTimeout(r, 1500));
     setIsSyncingAll(false);
   };
@@ -363,8 +338,8 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <div>
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-orange-500 animate-pulse" />
-              AI Prospect Discovery Radar
+                  <Sparkles className="h-5 w-5 text-orange-500" />
+              Provider-backed Prospect Discovery
             </h2>
             <p className="text-xs text-zinc-500 mt-1">
               Discover public prospects and run manual territory scans. Persistent background scheduling requires a separately configured job service.
@@ -542,77 +517,13 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
             </div>
           </div>
 
-          {/* Quick Filter Modifiers */}
-          <div className="flex flex-wrap items-center gap-6 bg-zinc-950/45 p-3.5 rounded-2xl border border-zinc-900 text-xs">
-            <span className="font-bold text-zinc-500 uppercase tracking-wider text-[10px]">Crawl Controls:</span>
-            <button
-              type="button"
-              onClick={() => setNewlyAddedOnly(!newlyAddedOnly)}
-              className="flex items-center gap-2 text-zinc-350 hover:text-white transition-colors cursor-pointer"
-            >
-              {newlyAddedOnly ? (
-                <CheckSquare className="h-4.5 w-4.5 text-orange-500 shrink-0" />
-              ) : (
-                <Square className="h-4.5 w-4.5 text-zinc-700 shrink-0" />
-              )}
-              <span>Favor Newer & Recently Opened Stores</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setOnlyGoodReviews(!onlyGoodReviews)}
-              className="flex items-center gap-2 text-zinc-350 hover:text-white transition-colors cursor-pointer"
-            >
-              {onlyGoodReviews ? (
-                <CheckSquare className="h-4.5 w-4.5 text-orange-500 shrink-0" />
-              ) : (
-                <Square className="h-4.5 w-4.5 text-zinc-700 shrink-0" />
-              )}
-              <span>Require Good reputation background (4.0+ Stars)</span>
-            </button>
-          </div>
-
-          {/* Enterprise Multi-Platform Directory Selection */}
-          <div className="bg-zinc-950/45 p-3.5 rounded-2xl border border-zinc-900 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-zinc-400 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                <Globe className="h-3 w-3 text-orange-400" />
-                Target Discovery Registries ({selectedPlatforms.length} active)
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedPlatforms.length === AVAILABLE_PLATFORMS.length) {
-                    setSelectedPlatforms(['Google Maps']);
-                  } else {
-                    setSelectedPlatforms(AVAILABLE_PLATFORMS.map(p => p.id));
-                  }
-                }}
-                className="text-[10px] text-orange-400 hover:text-orange-300 font-medium cursor-pointer"
-              >
-                {selectedPlatforms.length === AVAILABLE_PLATFORMS.length ? 'Reset to Google Maps Only' : 'Select All Sources'}
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {AVAILABLE_PLATFORMS.map((plat) => {
-                const isSelected = selectedPlatforms.includes(plat.id);
-                return (
-                  <button
-                    key={plat.id}
-                    type="button"
-                    onClick={() => togglePlatform(plat.id)}
-                    className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-all cursor-pointer font-medium ${
-                      isSelected
-                        ? 'bg-orange-500/15 border-orange-500/40 text-white shadow-xs'
-                        : 'bg-zinc-900/60 border-zinc-800 text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    <span>{plat.icon}</span>
-                    <span>{plat.label}</span>
-                    <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-orange-400' : 'bg-zinc-700'}`} />
-                  </button>
-                );
-              })}
-            </div>
+          {/* Evidence policy */}
+          <div className="flex flex-wrap items-center gap-3 bg-zinc-950/45 p-3.5 rounded-2xl border border-zinc-900 text-xs">
+            <span className="font-bold text-zinc-500 uppercase tracking-wider text-[10px]">Evidence Policy:</span>
+            <span className="flex items-center gap-2 text-zinc-350">
+              <CheckSquare className="h-4.5 w-4.5 text-orange-500 shrink-0" />
+              Google Places records only; no generated business identities, contact details, ratings, or social profiles.
+            </span>
           </div>
 
           {/* Scan Button & Visual Progress Logs */}
@@ -628,7 +539,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
                     <div className="bg-orange-500 h-full rounded-full transition-all duration-1000 w-[65%]" />
                   </div>
                   <p className="text-[10px] text-zinc-500 font-mono">
-                    [WEB RADAR SERVICE] Searching Google index tables & verifying webless criteria...
+                    [GOOGLE PLACES API] Returning provider fields only; email and social data are not inferred...
                   </p>
                 </div>
               )}
@@ -645,7 +556,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
                   <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-950 text-emerald-400 text-xs px-3 py-2 rounded-xl">
                     <CheckCircle2 className="h-4.5 w-4.5 shrink-0 text-emerald-400" />
                     <p>
-                      Found <strong>{successCount}</strong> premium prospects without websites! Click "Outreach AI" below to pitch them.
+                      Imported <strong>{successCount}</strong> Google Places records with no website listed by the provider. Review each source before outreach.
                     </p>
                   </div>
                 </div>
@@ -654,7 +565,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !discoveryAvailable}
               className={`w-full sm:w-auto shrink-0 px-6 py-2.5 text-sm font-semibold rounded-lg text-white shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
                 loading
                   ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
@@ -691,23 +602,23 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
                   className="text-xs text-orange-400 hover:text-orange-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <Clock className="h-3 w-3" />
-                  <span>Full Crawl History & Timestamps →</span>
+                  <span>Provider Query History & Timestamps →</span>
                 </button>
               </div>
               <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto pr-1">
                 {pastQueries.slice(0, 8).map((q) => (
                   <button
-                    key={q.id || `hist_${Math.random()}`}
+                    key={q.id || `${q.timestamp || 'history'}_${q.city || 'city'}_${q.category || 'category'}`}
                     type="button"
                     onClick={() => handleRerunQuery(q)}
                     className="text-[11px] px-3 py-1.5 rounded-lg border border-zinc-800 hover:border-orange-500/40 bg-zinc-950 text-zinc-300 hover:text-white flex items-center gap-2 transition-all text-left cursor-pointer group"
-                    title="Click to quickly re-run this discovery crawl"
+                    title="Re-run this provider query"
                   >
                     <span className="font-bold text-orange-400 group-hover:text-orange-300">{q.category}</span>
                     <span className="text-zinc-600">•</span>
                     <span>{q.city}, {q.country}</span>
                     <span className="text-[10px] bg-zinc-900 border border-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">
-                      +{q.discoveredCount || 4}
+                      {typeof q.discoveredCount === 'number' ? `+${q.discoveredCount}` : 'count unavailable'}
                     </span>
                     <RefreshCw className="h-3 w-3 text-zinc-500 group-hover:text-orange-400 ml-1 transition-transform group-hover:rotate-45" />
                   </button>
@@ -803,11 +714,11 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
               <div className="text-xs space-y-1 text-zinc-300">
                 <div className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                  <span>Only Good Reputation (4+ Stars Background)</span>
+                  <span>Business status: permanently closed places excluded</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                  <span>Track Recently Listed Establishments</span>
+                  <span>Website filter: no website listed by provider</span>
                 </div>
               </div>
             </div>
@@ -820,10 +731,10 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
             <div className="bg-zinc-950/25 border border-zinc-850 rounded-2xl p-5">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Globe className="h-4 w-4 text-orange-500" />
-                Weekly Auto-Scan Regions ({selectedCities.length})
+                  Manual Scan Regions ({selectedCities.length})
               </h3>
               <p className="text-[10px] text-zinc-500 mb-4 leading-relaxed">
-                Choose which territories to audit automatically every week. We'll crawl them using live search grounding search queries to find the recently added brick-and-mortars.
+                  Choose territories for a manual session run. Each request uses Google Places and stores only returned records.
               </p>
 
               <div className="grid grid-cols-2 gap-3.5">
@@ -857,17 +768,17 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
               <div>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
                   <Sliders className="h-4 w-4 text-orange-500" />
-                  Trigger Auto-Sync Cycle
+                  Run Provider Sync
                 </h3>
                 <p className="text-[10px] text-zinc-500 mb-4 leading-relaxed">
-                  Initiate a sequential web scan across all checked territories looking for recently added webless business profiles.
+                  Run a sequential Google Places search across the checked territories. No background job or synthetic fallback is used.
                 </p>
 
                 {/* Automation Log Feed console */}
                 {syncLogs.length > 0 && (
                   <div className="bg-zinc-950/80 border border-zinc-900 rounded-xl p-3 h-32 overflow-y-auto font-mono text-[9px] text-zinc-400 space-y-1 scrollbar-thin select-text">
                     {syncLogs.map((logStr, lIdx) => (
-                      <div key={lIdx} className={logStr.includes('[CRAWL]') ? 'text-orange-400/80' : logStr.includes('[SAVED]') ? 'text-emerald-400' : logStr.includes('[ERROR]') ? 'text-red-400' : 'text-zinc-400'}>
+                      <div key={lIdx} className={logStr.includes('[SEARCH]') ? 'text-orange-400/80' : logStr.includes('[SAVED]') ? 'text-emerald-400' : logStr.includes('[ERROR]') ? 'text-red-400' : 'text-zinc-400'}>
                         {logStr}
                       </div>
                     ))}
@@ -905,7 +816,7 @@ export default function SearchScanner({ onLeadsDiscovered, isDemoMode, onSaveQue
       )
     )}
 
-      {/* Search Crawl History & Re-run Modal */}
+      {/* Provider Query History & Re-run Modal */}
       <SearchHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}

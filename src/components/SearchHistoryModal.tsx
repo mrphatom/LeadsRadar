@@ -60,14 +60,12 @@ export default function SearchHistoryModal({
     const matchesSearch = queryStr.includes(searchFilter.toLowerCase());
     const matchesPlatform = selectedPlatformFilter === 'all' || 
       (item.platforms && item.platforms.includes(selectedPlatformFilter)) ||
-      (selectedPlatformFilter === 'Google Maps' && (!item.platforms || item.platforms.length === 0));
+      (selectedPlatformFilter === 'Google Places API' && (!item.platforms || item.platforms.length === 0));
     return matchesSearch && matchesPlatform;
   });
 
-  // Extract all unique platform names recorded in history
-  const allPlatforms = Array.from(new Set(
-    pastQueries.flatMap(q => q.platforms || ['Google Maps', 'Yelp', 'LinkedIn', 'Trustpilot'])
-  )).filter(Boolean);
+  // The active discovery source is intentionally singular; legacy platform metadata is not presented as current evidence.
+  const allPlatforms = pastQueries.length > 0 ? ['Google Places API'] : [];
 
   return (
     <div 
@@ -86,13 +84,13 @@ export default function SearchHistoryModal({
             </div>
             <div>
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                Discovery Crawl History
+                Provider Query History
                 <span className="text-[10px] font-mono bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">
                   {pastQueries.length} total
                 </span>
               </h2>
               <p className="text-xs text-zinc-400">
-                Audit past searches with timestamps and instantly re-run crawls
+                Review provider queries with timestamps and re-run the same Google Places search
               </p>
             </div>
           </div>
@@ -130,7 +128,7 @@ export default function SearchHistoryModal({
                   : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
               }`}
             >
-              All Sources
+              All Provider Queries
             </button>
             {allPlatforms.slice(0, 4).map((plat) => (
               <button
@@ -157,13 +155,13 @@ export default function SearchHistoryModal({
               <p className="text-xs font-medium">
                 {searchFilter || selectedPlatformFilter !== 'all'
                   ? 'No search history matches your filters.'
-                  : 'No discovery crawls recorded yet. Start scanning above!'}
+                  : 'No provider queries recorded yet. Start a search above.'}
               </p>
             </div>
           ) : (
             filteredHistory.map((queryItem, idx) => {
-              const platforms = queryItem.platforms || ['Google Maps', 'Yelp', 'Trustpilot', 'LinkedIn'];
-              const resultCount = queryItem.discoveredCount ?? 4;
+              const platforms = ['Google Places API'];
+              const resultCount = typeof queryItem.discoveredCount === 'number' ? queryItem.discoveredCount : null;
               const formattedTime = formatTimestamp(queryItem.timestamp);
 
               return (
@@ -184,7 +182,7 @@ export default function SearchHistoryModal({
                         {queryItem.city}, {queryItem.country}
                       </span>
                       <span className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                        +{resultCount} discovered
+                        {resultCount === null ? 'count unavailable' : `+${resultCount} returned`}
                       </span>
                     </div>
 
@@ -213,7 +211,7 @@ export default function SearchHistoryModal({
                         {formattedTime}
                       </div>
                       <div className="text-[10px] text-zinc-600 font-mono">
-                        {queryItem.source === 'google-search-grounding' ? 'Grounded Web Scan' : 'Multi-Source Crawl'}
+                        {queryItem.source === 'google-places-api' ? 'Google Places provider query' : 'Provider source recorded'}
                       </div>
                     </div>
 
@@ -226,7 +224,7 @@ export default function SearchHistoryModal({
                       className="bg-zinc-900 hover:bg-orange-500 border border-zinc-700 hover:border-orange-400 text-zinc-300 hover:text-zinc-950 text-xs font-bold px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer group-hover:border-zinc-600 shadow-sm shrink-0"
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
-                      <span>Re-run Crawl</span>
+                      <span>Re-run Query</span>
                     </button>
                   </div>
                 </div>
@@ -239,7 +237,7 @@ export default function SearchHistoryModal({
         <div className="px-6 py-3 border-t border-zinc-800 bg-zinc-900/90 flex items-center justify-between">
           <div className="text-[11px] text-zinc-400 flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-orange-400" />
-            Re-running a crawl checks multi-platform directories for newly registered businesses.
+            Re-running a query requests current records from Google Places; provider results may change over time.
           </div>
           <button
             onClick={onClose}

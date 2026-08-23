@@ -134,7 +134,7 @@ export default function AnalyticsDashboard({ leads }: AnalyticsDashboardProps) {
             {/* Proposal / Pitched */}
             <div>
               <div className="flex justify-between items-center text-xs text-zinc-400 mb-1">
-                <span className="font-medium text-indigo-400">Proposal & Mockup Sent</span>
+                <span className="font-medium text-indigo-400">Proposal Stage</span>
                 <span className="font-mono font-bold">{proposalLeads}</span>
               </div>
               <div className="w-full bg-zinc-950 h-2 rounded-full overflow-hidden">

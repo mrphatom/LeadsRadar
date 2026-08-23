@@ -36,23 +36,19 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
       id: `lead_manual_${Date.now()}`,
       name: name.trim(),
       country,
-      city: city.trim() || 'Local Area',
+      city: city.trim(),
       address: address.trim() || undefined,
-      category: finalCategory.trim() || 'General Business',
-      phone: phone.trim() || 'No Phone Listed',
-      email: email.trim() || 'contact@example.local',
+      category: finalCategory.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
       status: 'new',
-      notes: notes.trim() || 'Manually entered local business lacking an active website.',
+      notes: notes.trim(),
+      verificationMethod: 'user-provided',
+      evidenceAuthority: 'user-provided',
+      verified: false,
+      dataQuality: 'provided',
       createdAt: new Date().toISOString(),
-      activityLog: [
-        {
-          id: `log_init_${Date.now()}`,
-          type: 'note',
-          timestamp: new Date().toISOString(),
-          title: 'Prospect Entry Registered',
-          detail: 'Lead manually registered into central tracking database.'
-        }
-      ]
+      activityLog: []
     };
 
     onAddLead(newLead);
@@ -67,7 +63,7 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
         <div className="bg-zinc-950 text-white px-6 py-4 flex items-center justify-between shrink-0 border-b border-zinc-800">
           <div>
             <h2 className="text-base font-bold tracking-tight">Manual Prospect Enrollment</h2>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Record a offline local business with physical presence but no digital domain</p>
+            <p className="text-[10px] text-zinc-500 mt-0.5">Record a business from your own research. Provider evidence is not added automatically here.</p>
           </div>
           <button 
             onClick={onClose}
@@ -190,9 +186,9 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="e.g. +1 (206) 555-1234"
-                required
                 className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-655"
               />
+              <p className="text-[10px] text-zinc-600 mt-1">Optional. Leave blank when no public number is known.</p>
             </div>
 
             {/* Email */}
@@ -204,8 +200,7 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. contact@portlandpizza.local"
-                required
+                placeholder="e.g. public-contact@business.com"
                 className="w-full text-xs p-2.5 rounded-lg border border-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-655"
               />
             </div>
@@ -214,12 +209,12 @@ export default function AddLeadModal({ onClose, onAddLead }: AddLeadModalProps) 
           {/* Discovery Notes */}
           <div>
             <label className="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5 flex items-center gap-1.5">
-              💡 Discovery Audit Notes / Web absence context
+              Notes from your own research (optional)
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. High Google ratings and visible foot traffic. Only online footprint is an unofficial facebook page with menu pictures outdated by 2 years. Could benefit strongly from custom reservations portals."
+              placeholder="Record only observations you independently confirmed, including the source and date."
               className="w-full text-xs p-3.5 rounded-lg border border-zinc-800 min-h-[80px] focus:outline-hidden focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-950 text-zinc-200 placeholder:text-zinc-600"
             />
           </div>

@@ -69,11 +69,15 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
   const sanitizedLead = sanitizeLeadContact(lead);
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
-  const [fetchingEmail, setFetchingEmail] = useState(false);
+  const [refreshingProvider, setRefreshingProvider] = useState(false);
+  const hasPhone = !sanitizedLead.phone.toLowerCase().includes('no public');
+  const hasEmail = !sanitizedLead.email.toLowerCase().includes('not publicly listed');
+  const hasGooglePlacesSource = sanitizedLead.verificationMethod === 'google-places'
+    && Boolean(sanitizedLead.sourceId || sanitizedLead.sourceUrls?.length);
 
-  const handleFetchEmail = async (e: React.MouseEvent) => {
+  const handleRefreshProvider = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    setFetchingEmail(true);
+    setRefreshingProvider(true);
     try {
       const resp = await apiFetch('/api/enrich-lead', {
         method: 'POST',
@@ -82,7 +86,8 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
           name: lead.name,
           city: lead.city,
           country: lead.country,
-          category: lead.category
+          category: lead.category,
+          ...(lead.verificationMethod === 'google-places' && lead.sourceId ? { placeId: lead.sourceId } : {})
         })
       });
       if (!resp.ok) {
@@ -101,9 +106,9 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
         onUpdate(enrichedLead);
       }
     } catch (err) {
-      console.warn("Contact enrichment unavailable; existing lead data was preserved:", err);
+      console.warn("Google Places provider refresh unavailable; existing lead data was preserved:", err);
     } finally {
-      setFetchingEmail(false);
+      setRefreshingProvider(false);
     }
   };
 
@@ -186,23 +191,15 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
             {lead.category}
           </div>
 
-          {lead.verified && lead.dataQuality === 'verified' ? (
-            <span
-              className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md"
-              title="Verified with provider grounding evidence"
-            >
-              <ShieldCheck className="h-3 w-3" />
-              Verified Factual
-            </span>
-          ) : (
-            <span
-              className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md"
-              title="Contact and business details require independent verification"
-            >
-              <AlertCircle className="h-3 w-3" />
-              {lead.dataQuality === 'synthetic' ? 'Synthetic Demo' : 'Unverified Data'}
-            </span>
-          )}
+          <span
+            className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md ${hasGooglePlacesSource
+              ? 'text-sky-300 bg-sky-500/10 border border-sky-500/30'
+              : 'text-amber-300 bg-amber-500/10 border border-amber-500/30'}`}
+            title={hasGooglePlacesSource ? 'Source metadata supplied by Google Places; review the linked record before outreach' : 'Details were provided by a user or have no authoritative provider evidence'}
+          >
+            {hasGooglePlacesSource ? <Globe className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+            {hasGooglePlacesSource ? 'Google Places source' : lead.dataQuality === 'synthetic' ? 'Synthetic record' : 'Provided / unverified'}
+          </span>
 
           {/* Inline Active Tags Lists */}
           {lead.tags && lead.tags.length > 0 && (
@@ -238,16 +235,17 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
           <div className="flex items-center justify-between text-xs text-zinc-400 hover:text-white transition-all">
             <div 
               className="flex items-center gap-2 truncate cursor-pointer hover:underline decoration-orange-500/40"
-              onClick={() => copyToClipboard(sanitizedLead.phone, 'phone')}
-              title="Click to copy phone & set Contacted"
+                onClick={() => hasPhone && copyToClipboard(sanitizedLead.phone, 'phone')}
+              title={hasPhone ? 'Click to copy phone & set Contacted' : 'No phone number was returned by the provider'}
             >
               <Phone className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
               <span className="font-mono truncate select-all">{sanitizedLead.phone}</span>
             </div>
             <button
-              onClick={() => copyToClipboard(sanitizedLead.phone, 'phone')}
-              className="text-zinc-500 hover:text-orange-400 p-1 shrink-0 transition-colors cursor-pointer"
-              title="Copy Phone & set Contacted"
+              onClick={() => hasPhone && copyToClipboard(sanitizedLead.phone, 'phone')}
+              disabled={!hasPhone}
+              className="text-zinc-500 hover:text-orange-400 p-1 shrink-0 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              title={hasPhone ? 'Copy Phone & set Contacted' : 'No phone number was returned by the provider'}
             >
               {copiedPhone ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
             </button>
@@ -257,8 +255,8 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
           <div className="flex items-center justify-between text-xs text-zinc-400 hover:text-white transition-all">
             <div 
               className="flex items-center gap-2 truncate cursor-pointer hover:underline decoration-orange-500/40"
-              onClick={() => copyToClipboard(sanitizedLead.email, 'email')}
-              title="Click to copy email & set Contacted"
+              onClick={() => hasEmail && copyToClipboard(sanitizedLead.email, 'email')}
+              title={hasEmail ? 'Click to copy email & set Contacted' : 'Email was not returned by the provider'}
             >
               <Mail className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
               <span className="truncate font-mono select-all">
@@ -268,16 +266,17 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                onClick={handleFetchEmail}
-                disabled={fetchingEmail}
+                onClick={handleRefreshProvider}
+                disabled={refreshingProvider}
                 className="text-[10px] font-bold text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 px-2 py-0.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                title="Fetch & verify direct contact email"
+                title="Refresh the Google Places provider record"
               >
-                <span>{fetchingEmail ? 'Enriching...' : 'Enrich ⚡'}</span>
+                <span>{refreshingProvider ? 'Refreshing...' : 'Refresh provider'}</span>
               </button>
               <button
-                onClick={() => copyToClipboard(sanitizedLead.email, 'email')}
-                className="text-zinc-500 hover:text-orange-400 p-1 transition-colors cursor-pointer"
+                onClick={() => hasEmail && copyToClipboard(sanitizedLead.email, 'email')}
+                disabled={!hasEmail}
+                className="text-zinc-500 hover:text-orange-400 p-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Copy Email & set Contacted"
               >
                 {copiedEmail ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
@@ -362,10 +361,11 @@ export default function LeadCard({ lead, onSelect, onStatusChange, isSelected = 
           {/* Dual buttons row: Quick Call and Outreach AI */}
           <div className="flex items-center gap-2 w-full">
             <a 
-              href={`tel:${lead.phone}`}
-              onClick={handleContactAction}
+              href={hasPhone ? `tel:${sanitizedLead.phone}` : undefined}
+              onClick={hasPhone ? handleContactAction : undefined}
+              aria-disabled={!hasPhone}
               className="bg-zinc-950 hover:bg-zinc-900 hover:border-zinc-700 text-orange-400 border border-zinc-800 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 flex-1 transition-colors cursor-pointer"
-              title={`Quick Call ${lead.phone}`}
+              title={hasPhone ? `Quick Call ${sanitizedLead.phone}` : 'No phone number was returned by the provider'}
             >
               <Phone className="h-3.5 w-3.5 shrink-0 text-orange-400/80" />
               <span>Quick Call</span>

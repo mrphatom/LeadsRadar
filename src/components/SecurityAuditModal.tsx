@@ -76,7 +76,7 @@ export default function SecurityAuditModal({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-white">
-                    {state.isGuest ? 'Guest Sandbox Mode (Rate-Limited)' : 'Pro Authenticated Mode (Unlimited)'}
+                    {state.isGuest ? 'Guest Mode (Rate-Limited)' : 'Authenticated Mode'}
                   </span>
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
@@ -90,8 +90,8 @@ export default function SecurityAuditModal({
                 </div>
                 <p className="text-xs text-zinc-400 mt-0.5">
                   {state.isGuest
-                    ? 'Guest users are restricted to protect AI search quota and database synchronization.'
-                    : 'All search restrictions, lead save limits, and API throttling are disabled.'}
+                    ? 'Guest users have session limits for provider queries and lead persistence.'
+                    : 'Authenticated users receive the server-configured provider-query and lead-save limits; abuse throttling remains active.'}
                 </p>
               </div>
             </div>
@@ -125,7 +125,7 @@ export default function SecurityAuditModal({
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
                   <Eye className="h-3.5 w-3.5 text-orange-400" />
-                  Discovery Crawls
+                  Provider Queries
                 </span>
                 <span className="font-mono text-zinc-400">
                   {state.isGuest ? `${state.searchesUsed} / ${state.maxSearches}` : 'Unlimited'}
@@ -144,7 +144,7 @@ export default function SecurityAuditModal({
               <p className="text-[11px] text-zinc-500">
                 {state.isGuest
                   ? `${Math.max(0, state.maxSearches - state.searchesUsed)} scans remaining in guest session.`
-                  : 'Pro mode allows continuous multi-platform crawls.'}
+                  : 'Authenticated mode uses the configured Google Places provider; request limits still apply.'}
               </p>
             </div>
 

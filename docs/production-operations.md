@@ -2,7 +2,7 @@
 
 ## Runtime contract
 
-LeadsRadar runs as a Vite-built browser application plus the bundled Express server in `dist/server.cjs`. Production must run with `NODE_ENV=production`, an HTTPS `APP_URL`, a valid `ENCRYPTION_KEY`, a Firebase Admin service-account configuration, and a Gemini API key. Demo fallbacks are disabled automatically in production.
+LeadsRadar runs as a Vite-built browser application plus the bundled Express server in `dist/server.cjs`. Production must run with `NODE_ENV=production`, an HTTPS `APP_URL`, a valid `ENCRYPTION_KEY`, a Firebase Admin service-account configuration, and a server-side Google Places API key. Gemini is optional and is used only for clearly labeled generated guidance. Discovery and enrichment fail closed when Google Places is unavailable; no demo or synthetic lead fallback is permitted.
 
 | Variable | Required | Purpose |
 |---|---:|---|
@@ -10,7 +10,8 @@ LeadsRadar runs as a Vite-built browser application plus the bundled Express ser
 | `PORT` | No | Listening port; defaults to `3000`. |
 | `APP_URL` | Yes | Absolute HTTPS application URL used for the MoonPay completion redirect. |
 | `ALLOWED_ORIGINS` | Recommended | Comma-separated additional trusted browser origins. |
-| `GEMINI_API_KEY` | Yes | Grounded AI discovery and Pro assistance. |
+| `GOOGLE_PLACES_API_KEY` | Yes for discovery | Server-side Google Places API key. Discovery and enrichment are unavailable when absent; never expose it to the browser. |
+| `GEMINI_API_KEY` | No | Optional generated guidance only; never a source of lead identity or contact facts. |
 | `FIREBASE_SERVICE_ACCOUNT` | Yes | Server-side Firebase Admin credentials as a JSON string. |
 | `ENCRYPTION_KEY` | Yes | At least 32 UTF-8 bytes for authenticated Gmail-token encryption. Store in a secret manager. |
 | `MOONPAY_ENVIRONMENT` | No | `sandbox` locally and `production` in production; production mode rejects sandbox. |
@@ -48,9 +49,13 @@ Gmail access tokens are encrypted with AES-256-GCM and stored under the server-o
 
 When a user disconnects Gmail, the server deletes the private integration document and clears the profile connection status. Rotate the encryption key only with a planned re-encryption migration; changing it without migrating existing ciphertext will make stored tokens unreadable.
 
-## Data quality and fallback behavior
+## Provider evidence and fallback behavior
 
-Grounded discovery results carry citation metadata and are eligible for a verified state only when grounding evidence is returned. Missing contact details remain explicit missing-data markers. Local and provider-error fallbacks are labeled synthetic or unverified and must not be used as factual outreach targets without independent verification.
+Google Places Text Search (New) and Place Details (New) are the only lead identity/contact discovery sources. Requests use narrow field masks and map only fields returned by the provider: stable Place ID, provider display name, formatted address, operational status, Maps URI, listed website URI, listed phone, and provider category when present. Permanently closed records are excluded. A listed website is a provider-returned filter condition; it is not a claim that no other website exists.
+
+Each mapped record includes the provider source ID, source URL, retrieval timestamp, and explicit missing markers for email, LinkedIn, and social profiles. A browser-persisted result is marked `client-provided` and must not be treated as server-authoritative verification. Only an Admin SDK/provider persistence workflow may set `server-provider` authority. Missing fields and provider failures are never filled with generated values.
+
+Gemini output is untrusted planning guidance. It must not assert measured traffic, revenue loss, rankings, reviews, competitor identities, prior audits, contact attempts, or delivery events unless those facts are supplied by an evidence-returning system or the operator. LinkedIn intelligence is unavailable until a dedicated evidence-returning provider is configured.
 
 The weekly scan planner is a manual browser-session workflow. It is not a persistent background scheduler. Enterprise deployments that require scheduled scans should add a separately authenticated job runner with a durable queue, idempotency keys, per-tenant quotas, and operational monitoring.
 
@@ -79,6 +84,6 @@ For authentication failures, inspect request IDs and Firebase Admin initializati
 
 ## Usage quotas
 
-Grounded discovery consumes a daily search allowance in a server-side Firestore usage document keyed by the verified Firebase UID and UTC calendar day. The server reads the subscription tier from the server-owned profile, applies the free or Pro limit, and increments usage transactionally. The browser’s local planner state is only a convenience and is not an entitlement boundary. The generic Express IP limiter remains a separate abuse-control layer and must not be treated as the product quota.
+Google Places discovery consumes a daily search allowance in a server-side Firestore usage document keyed by the verified Firebase UID and UTC calendar day. The server reads the subscription tier from the server-owned profile, applies the free or Pro limit, and increments usage transactionally. The browser’s local planner state is only a convenience and is not an entitlement boundary. The generic Express IP limiter remains a separate abuse-control layer and must not be treated as the product quota.
 
 The `usage/{uid}_{YYYY-MM-DD}` documents are written by the Admin SDK and are not client-readable or client-writable under the current deny-by-default rules. If a deployment requires tenant-level billing, pooled quotas, or refunds for provider failures, extend this module with an explicit ledger/idempotency model rather than trusting client counters.

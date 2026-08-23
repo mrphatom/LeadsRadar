@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { consumeDailySearchQuota } from '../src/server/quotas.ts';
+import { consumeDailySearchQuota, releaseDailySearchQuota } from '../src/server/quotas.ts';
 
 function createFakeDb(subscriptionTier: 'free' | 'pro') {
   const documents = new Map<string, Record<string, unknown>>([
@@ -61,4 +61,16 @@ test('uses the server-owned Pro tier limit', async () => {
   assert.equal(result.tier, 'pro');
   assert.equal(result.limit, 20);
   assert.equal(result.remaining, 19);
+});
+
+test('releases a reserved daily search slot after provider failure', async () => {
+  const db = createFakeDb('free');
+  const now = new Date('2026-08-23T12:00:00.000Z');
+  const reserved = await consumeDailySearchQuota(db, 'user-1', now);
+  assert.equal(reserved.used, 1);
+
+  await releaseDailySearchQuota(db, 'user-1', reserved.day);
+  const retry = await consumeDailySearchQuota(db, 'user-1', now);
+  assert.equal(retry.used, 1);
+  assert.equal(retry.remaining, 9);
 });

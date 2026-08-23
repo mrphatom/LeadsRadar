@@ -37,6 +37,8 @@ export interface LinkedInCompanyIntelligence {
   keyDecisionMakers: LinkedInEmployeeContact[];
   lastAuditedAt: string;
   summary: string;
+  status?: 'available' | 'unavailable';
+  source?: string;
 }
 
 export interface WebAdaptabilityCheck {
@@ -72,6 +74,7 @@ export type AIPitchTone =
 
 export interface BusinessLead {
   id: string;
+  ownerId?: string;
   name: string;
   emailSent?: boolean;
   country: CountryType;
@@ -89,6 +92,11 @@ export interface BusinessLead {
   websiteStatus?: string;
   verified?: boolean;
   dataQuality?: 'verified' | 'provided' | 'unverified' | 'synthetic';
+  verificationMethod?: 'google-places' | 'user-provided' | 'unverified' | 'synthetic';
+  evidenceAuthority?: 'server-provider' | 'client-provided' | 'user-provided';
+  sourceId?: string;
+  sourceUrls?: string[];
+  retrievedAt?: string;
   verificationSummary?: string;
   sourcePlatform?: string;
   verificationScore?: number;

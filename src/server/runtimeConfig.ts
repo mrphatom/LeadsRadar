@@ -12,6 +12,7 @@ export interface RuntimeConfig {
   moonpayCurrencyCode: string;
   moonpayMonthlyAmount: string;
   moonpayYearlyAmount: string;
+  googlePlacesApiKey?: string;
 }
 
 function readBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -75,5 +76,6 @@ export function getRuntimeConfig(env: NodeJS.ProcessEnv): RuntimeConfig {
     moonpayCurrencyCode: (env.MOONPAY_CURRENCY_CODE || 'usdc').toLowerCase(),
     moonpayMonthlyAmount: env.MOONPAY_MONTHLY_AMOUNT || '7',
     moonpayYearlyAmount: env.MOONPAY_YEARLY_AMOUNT || '64',
+    googlePlacesApiKey: env.GOOGLE_PLACES_API_KEY?.trim() || undefined,
   };
 }

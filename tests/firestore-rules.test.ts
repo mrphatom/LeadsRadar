@@ -36,9 +36,14 @@ const lead = (ownerId: string) => ({
   status: 'new',
   createdAt: '2026-08-23T00:00:00.000Z',
   activityLog: [],
-  dataQuality: 'unverified',
-  verified: false,
-});
+    dataQuality: 'unverified',
+    verified: false,
+    verificationMethod: 'google-places',
+    evidenceAuthority: 'client-provided',
+    sourceId: 'ChIJtestplace',
+    sourceUrls: ['https://maps.google.com/?cid=test'],
+    retrievedAt: '2026-08-23T00:00:00.000Z',
+  });
 
 test('Firestore rules enforce owner isolation and server-owned profile fields', {
   skip: !emulatorConfigured,
@@ -79,8 +84,14 @@ test('Firestore rules enforce lead ownership, immutable identity, and strict key
 
   await assertSucceeds(setDoc(leadRef, lead('user-a')));
   await assertSucceeds(getDoc(leadRef));
+  await assertFails(setDoc(doc(owner, 'leads/lead_server_authority'), {
+    ...lead('user-a'),
+    id: 'lead_server_authority',
+    evidenceAuthority: 'server-provider',
+  }));
   await assertFails(getDoc(doc(otherUser, 'leads/lead_1')));
   await assertFails(updateDoc(leadRef, { ownerId: 'user-b' }));
+  await assertFails(updateDoc(leadRef, { evidenceAuthority: 'server-provider' }));
   await assertFails(updateDoc(leadRef, { unexpectedPrivilege: true }));
 });
 

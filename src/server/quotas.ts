@@ -59,3 +59,18 @@ export async function consumeDailySearchQuota(db: any, uid: string, now = new Da
     };
   });
 }
+
+export async function releaseDailySearchQuota(db: any, uid: string, day: string): Promise<void> {
+  const usageRef = db.collection('usage').doc(`${uid}_${day}`);
+  await db.runTransaction(async (transaction: any) => {
+    const usageSnapshot = await transaction.get(usageRef);
+    if (!usageSnapshot.exists) return;
+    const currentUsed = Number(usageSnapshot.data()?.searches ?? 0);
+    const used = Number.isFinite(currentUsed) && currentUsed > 0 ? Math.floor(currentUsed) : 0;
+    if (used === 0) return;
+    transaction.set(usageRef, {
+      searches: used - 1,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  });
+}

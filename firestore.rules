@@ -100,19 +100,22 @@ service cloud.firestore {
 
       allow create: if isSignedIn()
         && isValidId(leadId)
-        && isValidLead(incoming())
+        && isValidLead(incoming(), false)
         && isOwner(incoming().ownerId);
 
       allow update: if isSignedIn()
         && isOwner(existing().ownerId)
-        && isValidLead(incoming())
+        && isValidLead(incoming(), 'evidenceAuthority' in existing() && existing().evidenceAuthority == 'server-provider')
         && incoming().ownerId == existing().ownerId
         && incoming().id == existing().id
         && incoming().createdAt == existing().createdAt
+        && (!('evidenceAuthority' in incoming())
+          || incoming().evidenceAuthority == existing().evidenceAuthority
+          || (!('evidenceAuthority' in existing()) && incoming().evidenceAuthority in ['client-provided', 'user-provided']))
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'name', 'emailSent', 'country', 'city', 'address', 'category', 'phone',
           'email', 'linkedin', 'socials', 'websiteStatus', 'verified',
-          'verificationSummary', 'sourcePlatform', 'verificationScore', 'status',
+          'verificationSummary', 'sourcePlatform', 'sourceId', 'sourceUrls', 'retrievedAt', 'verificationMethod', 'evidenceAuthority', 'verificationScore', 'status',
           'notes', 'linkedinIntelligence', 'webAdaptability', 'outreachScript',
           'outreachScriptSource', 'activityLog', 'tags', 'analysis'
         ]);
@@ -120,11 +123,11 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isOwner(existing().ownerId);
     }
 
-    function isValidLead(lead) {
+    function isValidLead(lead, allowServerAuthority) {
       return hasOnlyKeys(lead, [
           'id', 'ownerId', 'name', 'emailSent', 'country', 'city', 'address',
           'category', 'phone', 'email', 'linkedin', 'socials', 'websiteStatus',
-          'verified', 'dataQuality', 'verificationSummary', 'sourcePlatform', 'verificationScore',
+          'verified', 'dataQuality', 'verificationSummary', 'sourcePlatform', 'sourceId', 'sourceUrls', 'retrievedAt', 'verificationMethod', 'evidenceAuthority', 'verificationScore',
           'status', 'notes', 'linkedinIntelligence', 'webAdaptability',
           'outreachScript', 'outreachScriptSource', 'createdAt', 'activityLog',
           'tags', 'analysis'
@@ -165,6 +168,12 @@ service cloud.firestore {
         && (!('dataQuality' in lead) || lead.dataQuality in ['verified', 'provided', 'unverified', 'synthetic'])
         && (!('verificationSummary' in lead) || (lead.verificationSummary is string && lead.verificationSummary.size() <= 2000))
         && (!('sourcePlatform' in lead) || (lead.sourcePlatform is string && lead.sourcePlatform.size() <= 128))
+        && (!('sourceId' in lead) || (lead.sourceId is string && lead.sourceId.size() <= 256))
+        && (!('sourceUrls' in lead) || (lead.sourceUrls is list && lead.sourceUrls.size() <= 10))
+        && (!('retrievedAt' in lead) || (lead.retrievedAt is string && lead.retrievedAt.size() <= 128))
+        && (!('verificationMethod' in lead) || lead.verificationMethod in ['google-places', 'user-provided', 'unverified', 'synthetic'])
+        && (!('evidenceAuthority' in lead) || lead.evidenceAuthority in ['server-provider', 'client-provided', 'user-provided'])
+        && (!('evidenceAuthority' in lead) || lead.evidenceAuthority != 'server-provider' || allowServerAuthority)
         && (!('verificationScore' in lead) || (lead.verificationScore is number && lead.verificationScore >= 0 && lead.verificationScore <= 100))
         && (!('notes' in lead) || (lead.notes is string && lead.notes.size() <= 5000))
         && (!('outreachScriptSource' in lead) || (lead.outreachScriptSource is string && lead.outreachScriptSource.size() <= 128))

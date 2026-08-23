@@ -31,7 +31,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
   const [checkingReplies, setCheckingReplies] = useState(false);
   const [replyCheckError, setReplyCheckError] = useState<string | null>(null);
-  const [replyData, setReplyData] = useState<{ hasReply: boolean; replySnippet?: string; suggestedReply?: string } | null>(null);
+  const [replyData, setReplyData] = useState<{ hasReply: boolean; replySnippet?: string; suggestedReply?: string | null; guidanceAvailable?: boolean } | null>(null);
 
   const [sendingReply, setSendingReply] = useState(false);
   const [replySubject, setReplySubject] = useState('');
@@ -214,7 +214,8 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
           name: lead.name,
           city: lead.city,
           country: lead.country,
-          category: lead.category
+          category: lead.category,
+          ...(lead.verificationMethod === 'google-places' && lead.sourceId ? { placeId: lead.sourceId } : {})
         })
       });
       if (!resp.ok) {
@@ -239,7 +240,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
       onUpdateLead(enrichedLead);
       triggerCopyNotice("Contact details updated from provider response; verify before outreach.");
     } catch (err) {
-      console.warn("Contact enrichment unavailable; existing lead data was preserved:", err);
+      console.warn("Google Places provider refresh unavailable; existing lead data was preserved:", err);
       triggerCopyNotice("Contact enrichment unavailable; existing data was preserved.");
     } finally {
       setFetchingEmail(false);
@@ -267,7 +268,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
       });
 
       if (!response.ok) {
-        throw new Error('Failed to reach SWOT audit servers.');
+        throw new Error('Failed to reach the strategy-guidance service.');
       }
 
       const data = await response.json();
@@ -280,8 +281,8 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
             id: `log_analysis_${Date.now()}`,
             type: 'note',
             timestamp: new Date().toISOString(),
-            title: 'SWOT Competitive Audit Compiled',
-            detail: 'Conducted automated SEO estimation metrics and comprehensive competitive analysis report.'
+            title: 'Generated strategy hypotheses',
+            detail: 'Generated non-factual planning guidance from the lead fields available at the time of the request.'
           },
           ...lead.activityLog
         ]
@@ -394,51 +395,46 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
       type: 'status_change',
       timestamp: new Date().toISOString(),
       title: 'Status Updated to Contacted',
-      detail: directSent 
-        ? 'System transitioned status automatically after user sent direct API campaign mail.' 
-        : 'System transitioned state automatically after user initiated outreach contact.'
+      detail: directSent
+        ? 'Status updated after a configured mail provider accepted the message.'
+        : 'Status updated after the user initiated an outreach action.'
     } : null;
 
-    const emailSentLogItem: ActivityLogItem = {
+    const emailSentLogItem: ActivityLogItem | null = directSent ? {
       id: `log_email_sent_${Date.now()}`,
       type: 'email',
       timestamp: new Date().toISOString(),
-      title: directSent ? 'Direct Outbound Campaign Transmitted' : 'Outbound Email Pitch Drafted',
-      detail: directSent 
-        ? `Outbound outreach mail dispatched directly via integrated workspace API lines to: ${lead.email}`
-        : `Constructed and launched client email script to: ${lead.email}`
-    };
+      title: 'Outbound email accepted by provider',
+      detail: `The configured mail provider accepted an outbound message for ${sanitizedLead.email}.`
+    } : null;
 
-    const newLogs = statusLogItem 
-      ? [statusLogItem, emailSentLogItem, ...lead.activityLog] 
-      : [emailSentLogItem, ...lead.activityLog];
+    const newLogs = [
+      ...(statusLogItem ? [statusLogItem] : []),
+      ...(emailSentLogItem ? [emailSentLogItem] : []),
+      ...lead.activityLog,
+    ];
 
     onUpdateLead({
       ...lead,
       status: isNew ? 'contacted' : lead.status,
-      emailSent: true,
-      activityLog: newLogs
+      emailSent: directSent ? true : lead.emailSent,
+      activityLog: newLogs,
     });
   };
 
   const handleSendEmailDirectly = async (subject: string, body: string) => {
     if (!user) return;
+    if (sanitizedLead.email.includes('not publicly listed')) {
+      setDirectMailError('No email address was returned by the provider. No message was sent.');
+      return;
+    }
     setDirectMailSending(true);
     setDirectMailError(null);
     setDirectMailSuccess(false);
 
     try {
-      if (profile?.outlookConnected) {
-        // Simulated direct Outlook transmission
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        setDirectMailSuccess(true);
-        handleContactAction(true);
-        triggerCopyNotice("Email sent directly via Outlook Sandbox!");
-        return;
-      }
-
       if (!profile?.gmailConnected) {
-        throw new Error("You must connect your Gmail or Outlook credentials first.");
+        throw new Error("You must connect your Gmail credentials first.");
       }
 
       const res = await apiFetch("/api/gmail/send", {
@@ -458,7 +454,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
       setDirectMailSuccess(true);
       handleContactAction(true);
-      triggerCopyNotice("Email sent directly via Gmail API!");
+      triggerCopyNotice("Message accepted by Gmail provider.");
     } catch (err: any) {
       console.error("Direct send error:", err);
       setDirectMailError(err.message || "Outbound email transmission failed.");
@@ -504,26 +500,6 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
     if (!user || !replyBody) return;
     setSendingReply(true);
     try {
-      if (profile?.outlookConnected) {
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        triggerCopyNotice("Follow-up sent directly via Outlook Sandbox!");
-        setReplyData(null); // Clear active reply panel on success
-        
-        // Add follow-up note to CRM activity log
-        const newLog: ActivityLogItem = {
-          id: `log_reply_${Date.now()}`,
-          type: 'email',
-          timestamp: new Date().toISOString(),
-          title: 'Direct Suggested Follow-up Sent',
-          detail: `Sent follow-up response directly via Outlook sandbox: "${replyBody.substring(0, 100)}..."`
-        };
-        onUpdateLead({
-          ...lead,
-          activityLog: [newLog, ...lead.activityLog]
-        });
-        return;
-      }
-
       const res = await apiFetch("/api/gmail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -539,14 +515,14 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
         throw new Error(data.error || "Failed to transmit reply.");
       }
 
-      triggerCopyNotice("Follow-up sent directly via Gmail API!");
+      triggerCopyNotice("Follow-up accepted by Gmail provider.");
       setReplyData(null);
       
       const newLog: ActivityLogItem = {
         id: `log_reply_${Date.now()}`,
         type: 'email',
         timestamp: new Date().toISOString(),
-        title: 'Direct Suggested Follow-up Sent',
+        title: 'Suggested follow-up accepted by provider',
         detail: `Transmitted Sales Coach suggested response directly via Gmail API.`
       };
       onUpdateLead({
@@ -614,19 +590,17 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
             <div className="flex items-center gap-2 text-zinc-350">
               <Building2 className="h-4.5 w-4.5 text-orange-500 shrink-0" />
               <span className="font-semibold text-white truncate">{lead.category}</span>
-              {lead.verified && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  Verified Factual
-                </span>
-              )}
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 rounded-md" title="Source provenance is shown separately from current truth or contact permission">
+                <Globe className="h-3.5 w-3.5" />
+                {lead.verificationMethod === 'google-places' ? 'Google Places source' : 'Provided / unverified'}
+              </span>
               <button
                 type="button"
                 onClick={() => setShowDeepAuditModal(true)}
                 className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 px-2.5 py-0.5 rounded-md transition-colors cursor-pointer"
               >
                 <ShieldCheck className="h-3.5 w-3.5" />
-                <span>Factual Web & LinkedIn Audit →</span>
+                <span>Provider evidence review →</span>
               </button>
             </div>
             <div 
@@ -650,12 +624,14 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
             <div className="flex items-center gap-2">
               <div 
                 onClick={() => {
-                  navigator.clipboard.writeText(sanitizedLead.email);
-                  triggerCopyNotice("Email address copied to clipboard!");
-                  handleContactAction();
+                  if (!sanitizedLead.email.includes('not publicly listed')) {
+                    navigator.clipboard.writeText(sanitizedLead.email);
+                    triggerCopyNotice("Email address copied to clipboard!");
+                    handleContactAction();
+                  }
                 }}
-                className="flex items-center gap-2 text-zinc-300 hover:text-orange-400 cursor-pointer group/item transition-colors"
-                title="Click to copy & set Contacted status"
+                className={`flex items-center gap-2 ${sanitizedLead.email.includes('not publicly listed') ? 'text-zinc-500 cursor-default' : 'text-zinc-300 hover:text-orange-400 cursor-pointer'} group/item transition-colors`}
+                title={sanitizedLead.email.includes('not publicly listed') ? 'Email was not returned by the provider' : 'Click to copy & set Contacted status'}
               >
                 <Mail className="h-4 w-4 text-zinc-500 group-hover/item:text-orange-500 shrink-0 transition-colors" />
                 <span className="font-mono truncate select-all group-hover/item:underline">{sanitizedLead.email}</span>
@@ -665,9 +641,9 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                 onClick={handleFetchEmail}
                 disabled={fetchingEmail}
                 className="text-xs font-bold text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 px-2.5 py-1 rounded-lg transition-colors cursor-pointer shrink-0 flex items-center gap-1 disabled:opacity-50"
-                title="Fetch & verify direct contact email via Google Search Grounding"
+                title="Refresh the Google Places provider record"
               >
-                <span>{fetchingEmail ? 'Enriching...' : 'Enrich Contact ⚡'}</span>
+                <span>{fetchingEmail ? 'Refreshing...' : 'Refresh provider'}</span>
               </button>
             </div>
           </div>
@@ -767,7 +743,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                 }`}
               >
                 <BarChart2 className="h-4 w-4" />
-                SWOT Audit {!isPro && '⭐'}
+                Strategy Guidance {!isPro && '⭐'}
               </button>
               <button
                 onClick={() => setActiveTab('assistant')}
@@ -911,10 +887,10 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                             className="w-full text-xs bg-zinc-900 border border-zinc-800 text-zinc-300 py-1.5 px-2.5 rounded-lg focus:outline-hidden"
                           >
                             <option value="English">🇺🇸 English (Default)</option>
-                            <option value="German">🇩🇪 German (Munich Audit) {!isPro && '⭐'}</option>
-                            <option value="French">🇫🇷 French (Paris Audit) {!isPro && '⭐'}</option>
-                            <option value="Spanish">🇪🇸 Spanish (Madrid Audit) {!isPro && '⭐'}</option>
-                            <option value="Italian">🇮🇹 Italian (Rome Audit) {!isPro && '⭐'}</option>
+                            <option value="German">🇩🇪 German {!isPro && '⭐'}</option>
+                            <option value="French">🇫🇷 French {!isPro && '⭐'}</option>
+                            <option value="Spanish">🇪🇸 Spanish {!isPro && '⭐'}</option>
+                            <option value="Italian">🇮🇹 Italian {!isPro && '⭐'}</option>
                           </select>
                         </div>
                       </div>
@@ -950,7 +926,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                           </button>
 
                           {/* Direct Send Integration for PRO users */}
-                          {isPro && (profile?.gmailConnected || profile?.outlookConnected) ? (
+                          {isPro && !sanitizedLead.email.includes('not publicly listed') && profile?.gmailConnected ? (
                             <button
                               type="button"
                               disabled={directMailSending}
@@ -969,9 +945,10 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                           ) : null}
 
                           <a
-                            href={`mailto:${lead.email}?subject=${encodeURIComponent(emailSubjectText)}&body=${encodeURIComponent(emailBodyText)}`}
-                            onClick={() => handleContactAction(false)}
-                            className="text-[11px] text-zinc-950 hover:bg-orange-600 bg-orange-500 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-extrabold cursor-pointer transition-colors shrink-0"
+                            href={sanitizedLead.email.includes('not publicly listed') ? undefined : `mailto:${sanitizedLead.email}?subject=${encodeURIComponent(emailSubjectText)}&body=${encodeURIComponent(emailBodyText)}`}
+                            onClick={sanitizedLead.email.includes('not publicly listed') ? undefined : () => handleContactAction(false)}
+                            aria-disabled={sanitizedLead.email.includes('not publicly listed')}
+                            className={`text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-extrabold transition-colors shrink-0 ${sanitizedLead.email.includes('not publicly listed') ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed' : 'text-zinc-950 hover:bg-orange-600 bg-orange-500 cursor-pointer'}`}
                           >
                             <Send className="h-3 w-3" /> Compose Email
                           </a>
@@ -981,14 +958,14 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       {/* ENHANCEMENT 3B: Clickable "Pain Point" Tags */}
                       <div className="bg-zinc-900/60 p-3.5 border-b border-zinc-850 space-y-2">
                         <span className="text-[10px] text-zinc-450 font-bold block uppercase font-mono tracking-wider flex items-center gap-1 text-zinc-500">
-                          ⚠️ Click to Insert High-converting Pain Point Paragraph:
+                          Optional hypothesis templates — insert only after your own observation:
                         </span>
                         <div className="flex flex-wrap gap-1.5">
                           {[
-                            { tag: "Slow Mobile Load ⚠️", text: "\n\nAdditionally, I checked your business rankings on mobile devices and observed it takes over 5.2 seconds to fully load. According to Google research, 53% of mobile visits are abandoned if a local landing page takes longer than 3 seconds to render." },
-                            { tag: "No Web Bookings 📅", text: "\n\nI also found that customers looking to schedule table reservations are forced to make a direct voice call. Integrating an automated self-booking scheduler calendar directly on a responsive domain can grow bookings by up to 34%." },
-                            { tag: "Missing Reviews Widget 💬", text: "\n\nWe noted that you have outstanding reviews on map profiles, but they are completely absent from an independent domain page. Consolidating organic map testimonials directly onto your page is essential to capture map SEO trust." },
-                            { tag: "Not Mobile-Responsive 📱", text: "\n\nLastly, your mobile listing is lacking responsive alignment, causing local search prospects to zoom in manually and often bounce back to active competitor portals." }
+                            { tag: "Observed mobile issue", text: "\n\n[If independently observed] I noticed this mobile experience issue: [describe the page, device, and date]. Would you like me to share the observation and a possible fix?" },
+                            { tag: "Booking workflow question", text: "\n\n[Question to validate] How do customers currently request or book your services online? If useful, I can outline a booking-flow option for you to evaluate." },
+                            { tag: "Review display question", text: "\n\n[Question to validate] Would displaying selected customer reviews on an official website be useful for your customers? I can share implementation options without assuming your current review setup." },
+                            { tag: "Website usability hypothesis", text: "\n\n[Hypothesis to validate] Some visitors may encounter friction on the current website experience. If that is relevant, I can propose a responsive layout for your review." }
                           ].map((item, idx) => (
                             <button
                               key={idx}
@@ -1041,10 +1018,10 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[
-                          { objection: "\"Too Expensive / No Budget\"", response: "\"I completely understand! We focus on a Performance model. By securing just 2-3 extra bookings a month via this automated portal, you'll make back 100% of the small setup fee. We even build the live design draft completely free first.\"" },
-                          { objection: "\"We already have a guy/agency\"", response: "\"That's excellent, it shows you value digital. However, we performed a SWOT audit and noticed your current agency missed local mobile indexing, which costs you about $1,500/mo. I'd love to show you how we instantly resolve that without disruption.\"" },
-                          { objection: "\"We rely solely on Word-of-Mouth\"", response: "\"Word of mouth is the absolute gold standard! But did you know 82% of customers referred by word-of-mouth still Google you first to check your map pin? If you have no custom booking domain, they get distracted by competitor ads.\"" },
-                          { objection: "\"Call back after high season\"", response: "\"I understand, high season is extremely hectic! But did you know high season is exactly when your booking system needs automated maps funneling the most so you save hours on direct voice phone calls? Let us build the mockup today so you are ready.\"" }
+                          { objection: "\"Too Expensive / No Budget\"", response: "\"I understand. We can first clarify the scope, expected deliverables, and price so you can decide whether it is worthwhile.\"" },
+                          { objection: "\"We already have a guy/agency\"", response: "\"Understood. I will not assume there is a gap. If you share the outcome you want, I can explain where our services may or may not complement your current setup.\"" },
+                          { objection: "\"We rely solely on Word-of-Mouth\"", response: "\"That may work well for your business. Would you like to discuss whether an online information or booking experience could support that approach?\"" },
+                          { objection: "\"Call back after high season\"", response: "\"Of course. What date or condition should I use for a follow-up? I will only contact you again if that timing is welcome.\"" }
                         ].map((rob, rid) => (
                           <div key={rid} className="bg-zinc-900 p-3 rounded-xl border border-zinc-850 space-y-1.5 text-xs">
                             <span className="font-bold text-orange-400 font-mono block">{rob.objection}</span>
@@ -1104,16 +1081,15 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
                           {followupEnabled && (
                             <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 border-dashed space-y-3 animate-fadeIn border-zinc-705">
-                              <span className="text-[10px] text-orange-400 font-bold font-mono tracking-widest block uppercase">Campaign Dispatch Day 3 Outbox Template:</span>
+                              <span className="text-[10px] text-orange-400 font-bold font-mono tracking-widest block uppercase">Optional follow-up template — send only with permission:</span>
                               <div className="font-mono text-[11px] p-3 rounded-lg bg-zinc-950 text-zinc-400 space-y-2 border border-zinc-900 select-text">
-                                <p className="font-bold text-zinc-300">Subject: Refined Local Maps Report for {lead.name}</p>
+                                <p className="font-bold text-zinc-300">Subject: Follow-up for {lead.name}</p>
                                 <p className="pt-2 leading-relaxed">
                                   Hi {lead.name} Team,<br/><br/>
-                                  I wanted to quickly follow up on the complimentary SWOT Audit and responsive mobile landing mockup I sent across for your {lead.category} service early this week.<br/><br/>
-                                  We verified that nearby rivals in {lead.city} are capturing map bookings that should belong to {lead.name}. Our small performance dashboard setup takes under 48 hours to activate.<br/><br/>
-                                  Would you have 5 minutes for a short call about Word-Of-Mouth map capture?<br/><br/>
+                                  I am following up on our previous conversation about your {lead.category} business. I have not assumed any website, traffic, review, or competitor findings about your business.<br/><br/>
+                                  If you are open to it, I can share a short proposal for your review. If not, please let me know and I will not follow up again.<br/><br/>
                                   Best regards,<br/>
-                                  LeadsRadar Campaign Engine
+                                  [Your name]
                                 </p>
                               </div>
                             </div>
@@ -1136,7 +1112,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-white uppercase tracking-wider">
                             <Sparkles className="h-4 w-4 text-orange-500 animate-pulse" />
-                            <span>OUTBOUND CAMPAIGN RESPONSE TRACKER</span>
+                            <span>OUTBOUND RESPONSE NOTES</span>
                           </div>
                           <span className="bg-orange-500/10 text-orange-400 border border-orange-500/20 text-[8px] font-extrabold uppercase font-mono px-1.5 py-0.5 rounded">
                             Pro Monitor
@@ -1170,7 +1146,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                                   </>
                                 ) : (
                                   <>
-                                    <ArrowRightLeft className="h-3.5 w-3.5" /> Check Gmail/Outlook Answers
+                                    <ArrowRightLeft className="h-3.5 w-3.5" /> Check Gmail replies
                                   </>
                                 )}
                               </button>
@@ -1184,7 +1160,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
                             {replyData && !replyData.hasReply && (
                               <div className="text-xs font-medium text-zinc-500 bg-zinc-900/30 p-3.5 rounded-xl border border-zinc-850/60 text-center">
-                                No new replies scanned from <strong className="text-zinc-400 select-all">{lead.email}</strong> yet. Ask the client to send a testing reply or verify in subscription dashboard.
+                                No reply returned by Gmail for <strong className="text-zinc-400 select-all">{lead.email}</strong> yet. Verify the mailbox and recipient address if you expected a response.
                               </div>
                             )}
 
@@ -1192,23 +1168,28 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                               <div className="border border-emerald-500/20 bg-emerald-500/5 p-4 rounded-xl space-y-4.5 animate-fadeIn">
                                 <div className="flex items-center gap-1 text-[11px] font-extrabold text-emerald-400 uppercase tracking-widest leading-none">
                                   <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
-                                  <span>PROMPT RESPONSE DETECTED!</span>
+                                  <span>Gmail reply detected</span>
                                 </div>
 
                                 <div className="space-y-1.5">
-                                  <span className="text-[10px] text-zinc-500 font-mono block uppercase">Client Message Received Snippet:</span>
+                                  <span className="text-[10px] text-zinc-500 font-mono block uppercase">Received Gmail message snippet:</span>
                                   <p className="bg-zinc-950 text-zinc-300 p-3 rounded-xl border border-zinc-850 font-sans leading-relaxed text-xs italic leading-relaxed">
                                     "{replyData.replySnippet}"
                                   </p>
                                 </div>
 
-                                {/* Custom suggested Draft box */}
+                                {/* Optional generated reply guidance */}
                                 <div className="space-y-3 pt-3.5 border-t border-zinc-800">
+                                  {replyData.guidanceAvailable === false && (
+                                    <p className="text-xs text-zinc-500 bg-zinc-950/70 border border-zinc-800 rounded-lg p-3">
+                                      Generated guidance is unavailable. Write a response manually if you choose to reply.
+                                    </p>
+                                  )}
                                   <div className="flex items-center justify-between">
                                     <span className="text-[10px] text-orange-400 font-extrabold tracking-wider uppercase font-mono">
-                                      ✨ LeadsRadar AI Suggested Answer
+                                      Optional generated reply guidance
                                     </span>
-                                    <span className="text-[8px] text-zinc-500 font-mono">Gemini-optimized Objection Counter</span>
+                                    <span className="text-[8px] text-zinc-500 font-mono">Review before sending; this is not a factual record</span>
                                   </div>
 
                                   <div className="space-y-2">
@@ -1241,7 +1222,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
                                     <button
                                       type="button"
-                                      disabled={sendingReply}
+                                      disabled={sendingReply || !replyBody.trim()}
                                       onClick={handleSendReplyDirectly}
                                       className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-zinc-950 font-bold px-4 py-1.5 rounded-lg text-xs cursor-pointer flex items-center gap-1 transition-all shadow-md shadow-emerald-500/10 hover:scale-102"
                                     >
@@ -1275,12 +1256,13 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         <div className="flex items-center gap-2">
                           {/* One-click WhatsApp reachout */}
                           <a
-                            href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello ${lead.name} Team! I noticed your amazing reviews in ${lead.city} and made a complimentary local SEO audit for your ${lead.category} service. I wanted to share this over, is this a good place?`)}`}
+                            href={sanitizedLead.phone.includes('No public phone') ? undefined : `https://wa.me/${sanitizedLead.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello ${lead.name} Team. I have a question about your ${lead.category} business. Is this an appropriate place to discuss it?`)}`}
                             target="_blank"
                             rel="noopener noreferrer"
+                            aria-disabled={sanitizedLead.phone.includes('No public phone')}
                             className="text-[10px] text-emerald-400 hover:text-white bg-emerald-500/10 hover:bg-emerald-500 border border-emerald-500/30 px-2 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer font-bold transition-all"
                           >
-                            <MessageSquare className="h-3 w-3 shrink-0" /> WhatsApp Direct
+                            <MessageSquare className="h-3 w-3 shrink-0" /> {sanitizedLead.phone.includes('No public phone') ? 'WhatsApp unavailable' : 'WhatsApp draft'}
                           </a>
                           
                           <button
@@ -1445,7 +1427,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
               </div>
             )}
 
-            {/* TAB CONTENT: SWOT Analysis Audits */}
+            {/* TAB CONTENT: Generated Strategy Guidance */}
             {activeTab === 'analysis' && (
               !isPro ? (
                 <div className="bg-zinc-950/40 border border-orange-500/10 p-6 rounded-2xl text-center space-y-4 animate-fadeIn">
@@ -1453,10 +1435,10 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                     <Lock className="h-4.5 w-4.5 text-orange-400" />
                   </div>
                   <h3 className="text-white text-sm font-extrabold flex items-center justify-center gap-1.5">
-                    <Sparkles className="h-4 w-4 text-orange-500" /> Unlock Advanced SWOT & SEO Estimations
+                    <Sparkles className="h-4 w-4 text-orange-500" /> Unlock generated strategy guidance
                   </h3>
                   <p className="text-xs text-zinc-400 max-w-sm mx-auto leading-relaxed">
-                    View comprehensive competitor pricing breakdowns, potential search traffic loss calculations, local map difficulty analysis, and specific SEO optimization roadmaps.
+                    Generate clearly labeled planning hypotheses from the lead fields available in your workspace. No traffic, revenue, ranking, review, or competitor measurements are provided.
                   </p>
                   <button
                     type="button"
@@ -1473,9 +1455,9 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       <div className="p-3 bg-orange-500/10 text-orange-400 rounded-full mb-3.5">
                         <BarChart2 className="h-6 w-6" />
                       </div>
-                      <h3 className="font-bold text-white text-base">Generate Competitive SWOT Audit</h3>
+                      <h3 className="font-bold text-white text-base">Generate strategy hypotheses</h3>
                       <p className="text-xs text-zinc-400 max-w-md mt-1 mb-4 leading-relaxed">
-                        Gather regional SEO rankings data, run traffic loss estimations, list competitor counts in {lead.city}, and prepare a localized strategic positioning plan.
+                        Use the known lead fields to draft questions, possible opportunities, and items that require independent validation. This is guidance, not a measured audit.
                       </p>
                       <button
                         onClick={handleGenerateAnalysis}
@@ -1485,12 +1467,12 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         {loadingAnalysis ? (
                           <>
                             <Loader2 className="h-4 w-4 animate-spin" />
-                            Analyzing competitor indices...
+                            Generating guidance...
                           </>
                         ) : (
                           <>
                             <Sparkles className="h-4 w-4" />
-                            Generate SWOT Analysis
+                            Generate guidance
                           </>
                         )}
                       </button>
@@ -1506,26 +1488,26 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                       {/* SEO Metrics Grid */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-xl">
-                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Missed Traffic</span>
-                          <span className="text-xs text-white font-bold block mt-1">{lead.analysis.seoMetrics.estimatedMonthlyMissedTraffic}</span>
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Traffic measurement</span>
+                          <span className="text-xs text-white font-bold block mt-1">Not measured</span>
                         </div>
                         <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-xl col-span-1">
-                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Lost Revenue Est</span>
-                          <span className="text-xs text-orange-400 font-bold block mt-1">{lead.analysis.seoMetrics.estimatedBookingLossRevenue}</span>
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Revenue measurement</span>
+                          <span className="text-xs text-orange-400 font-bold block mt-1">Not measured</span>
                         </div>
                         <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-xl">
-                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Nearby Rivals</span>
-                          <span className="text-xs text-white font-bold block mt-1">{lead.analysis.seoMetrics.competitorCount}</span>
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Competitor evidence</span>
+                          <span className="text-xs text-white font-bold block mt-1">Not measured</span>
                         </div>
                         <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-xl">
-                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">SEO Difficulty</span>
-                          <span className="text-xs text-emerald-400 font-bold block mt-1">{lead.analysis.seoMetrics.rankDifficulty}</span>
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">Ranking evidence</span>
+                          <span className="text-xs text-emerald-400 font-bold block mt-1">Not measured</span>
                         </div>
                       </div>
 
                       {/* SWOT Matrix 4 Grid */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Competitive SWOT Matrix</label>
+                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Generated strategy hypotheses</label>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                           {/* Strengths */}
                           <div className="bg-zinc-950 border-l-4 border-emerald-500 p-4 rounded-xl border border-zinc-850/80">
@@ -1573,7 +1555,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                         onClick={handleGenerateAnalysis}
                         className="text-xs text-orange-400 hover:text-orange-300 font-semibold flex items-center gap-1.5 justify-end w-full cursor-pointer mt-2"
                       >
-                        <RefreshCw className="h-3 w-3" /> Re-audit Competitors
+                        <RefreshCw className="h-3 w-3" /> Regenerate guidance
                       </button>
                     </div>
                   )}
@@ -1592,7 +1574,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
                     <Sparkles className="h-4 w-4 text-orange-500" /> Unlock Objection Handling AI Coach
                   </h3>
                   <p className="text-xs text-zinc-400 max-w-sm mx-auto leading-relaxed">
-                    Obtain custom-tailored rebuttal logs from Gemini for word-of-mouth objectors, pricing resistance counters, and instant callback templates for your active negotiations.
+                    Generate non-factual conversation guidance from the lead fields available in your workspace. Review every statement before using it.
                   </p>
                   <button
                     type="button"
@@ -1861,7 +1843,7 @@ export default function LeadDetailsModal({ lead, onClose, onUpdateLead, onUpgrad
 
       </div>
 
-      {/* Deep Web Audit Modal (Zero Hallucination / LinkedIn Intelligence) */}
+      {/* Provider Evidence Review Modal */}
       <DeepWebAuditModal
         isOpen={showDeepAuditModal}
         onClose={() => setShowDeepAuditModal(false)}

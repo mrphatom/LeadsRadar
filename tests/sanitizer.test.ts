@@ -73,3 +73,32 @@ test('preserves explicit unverified provenance when contact data is present', ()
   assert.equal(result.verified, false);
   assert.equal(result.dataQuality, 'unverified');
 });
+
+test('requires server-provider authority before accepting Google Places verification', () => {
+  const base = {
+    id: 'lead_places_1',
+    name: 'Provider Result',
+    country: 'USA',
+    city: 'Austin',
+    category: 'Bakery',
+    phone: '+1 (512) 555-0100',
+    email: 'contact@example.org',
+    status: 'new' as const,
+    notes: '',
+    createdAt: new Date().toISOString(),
+    activityLog: [],
+    verified: true,
+    dataQuality: 'verified' as const,
+    verificationMethod: 'google-places' as const,
+    sourceId: 'ChIJtestplace',
+    sourceUrls: ['https://maps.google.com/?cid=test'],
+  };
+
+  const clientRecord = sanitizeLeadContact({ ...base, evidenceAuthority: 'client-provided' });
+  const serverRecord = sanitizeLeadContact({ ...base, evidenceAuthority: 'server-provider' });
+
+  assert.equal(clientRecord.verified, false);
+  assert.equal(clientRecord.dataQuality, 'provided');
+  assert.equal(serverRecord.verified, true);
+  assert.equal(serverRecord.dataQuality, 'verified');
+});

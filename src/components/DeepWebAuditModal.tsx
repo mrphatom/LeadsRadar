@@ -52,6 +52,7 @@ export default function DeepWebAuditModal({
             city: lead.city,
             country: lead.country,
             category: lead.category,
+            placeId: lead.sourceId,
           }),
         }).then(async (response) => {
           if (!response.ok) {
@@ -61,57 +62,36 @@ export default function DeepWebAuditModal({
         }).catch(() => null),
       ]);
 
-      const newEmail = sanitizeEmail(enrichResp?.enriched?.email || lead.email, lead.name);
-      const newPhone = sanitizePhone(enrichResp?.enriched?.phone || lead.phone, lead.city);
+      const enrichedRecord = enrichResp?.enriched as BusinessLead | undefined;
       const grounded = Array.isArray(enrichResp?.citations) && enrichResp.citations.length > 0;
-      const providerScore = typeof enrichResp?.enriched?.verificationScore === 'number'
-        ? Math.max(0, Math.min(100, Math.round(enrichResp.enriched.verificationScore)))
-        : 0;
-      const verifiedByEvidence = grounded && liResult.verifiedSocialFootprint && providerScore > 0;
+      const hasProviderEnrichment = grounded
+        && enrichedRecord?.verificationMethod === 'google-places'
+        && typeof enrichedRecord.sourceId === 'string';
+      const newEmail = sanitizeEmail(enrichedRecord?.email || lead.email, lead.name);
+      const newPhone = sanitizePhone(enrichedRecord?.phone || lead.phone, lead.city);
 
       setLinkedinData(liResult);
       setAdaptabilityData(adaptResult);
       setVerifiedEmail(newEmail);
       setVerifiedPhone(newPhone);
 
-      if (onUpdateLead) {
-        onUpdateLead(sanitizeLeadContact({
+      if (onUpdateLead && hasProviderEnrichment && enrichedRecord) {
+        const updatedLead: BusinessLead = {
           ...lead,
-          email: newEmail,
-          phone: newPhone,
-          linkedinIntelligence: liResult,
-          webAdaptability: adaptResult,
-          verified: verifiedByEvidence,
-          dataQuality: verifiedByEvidence ? 'verified' : 'unverified',
-          verificationScore: verifiedByEvidence ? providerScore : 0,
-          verificationSummary: verifiedByEvidence
-            ? `Deep audit completed with provider evidence. LinkedIn decision makers returned: ${liResult.keyDecisionMakers.length}.`
-            : 'Deep audit completed without sufficient provider evidence to verify this business or its contacts.',
-        }));
+          ...enrichedRecord,
+          id: lead.id,
+          ...(liResult.status !== 'unavailable' ? { linkedinIntelligence: liResult } : {}),
+          ...(adaptResult.status !== 'Not checked' ? { webAdaptability: adaptResult } : {}),
+          verificationSummary: `Google Places provider record refreshed at ${enrichedRecord.retrievedAt || new Date().toISOString()}. Email, LinkedIn, and social fields remain unlisted unless returned by a provider.`,
+        };
+        onUpdateLead(sanitizeLeadContact(updatedLead));
       }
     } catch (err) {
-      console.warn('Deep audit fallback triggered:', err);
-      const fallbackEmail = sanitizeEmail(lead.email, lead.name);
-      const fallbackPhone = sanitizePhone(lead.phone, lead.city);
-      const fallbackLi = getFallbackLinkedInIntelligence(lead.name, lead.city, lead.category);
-      const fallbackAdapt = getFallbackWebAdaptability(lead);
-      setLinkedinData(fallbackLi);
-      setAdaptabilityData(fallbackAdapt);
-      setVerifiedEmail(fallbackEmail);
-      setVerifiedPhone(fallbackPhone);
-      if (onUpdateLead) {
-        onUpdateLead(sanitizeLeadContact({
-          ...lead,
-          email: fallbackEmail,
-          phone: fallbackPhone,
-          linkedinIntelligence: fallbackLi,
-          webAdaptability: fallbackAdapt,
-          verified: false,
-          dataQuality: 'unverified',
-          verificationScore: 0,
-          verificationSummary: 'Deep audit could not complete because one or more providers were unavailable. No contact details were fabricated.',
-        }));
-      }
+      console.warn('Provider evidence review could not complete:', err);
+      setLinkedinData(getFallbackLinkedInIntelligence(lead.name, lead.city, lead.category));
+      setAdaptabilityData(getFallbackWebAdaptability(lead));
+      setVerifiedEmail(sanitizeEmail(lead.email, lead.name));
+      setVerifiedPhone(sanitizePhone(lead.phone, lead.city));
     } finally {
       setLoading(false);
     }
@@ -130,7 +110,7 @@ export default function DeepWebAuditModal({
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-white">{lead.name}</h2>
                 <span className="text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                  Factual Audit (Zero Hallucination)
+                  Provider Evidence Review
                 </span>
               </div>
               <p className="text-xs text-zinc-400">
@@ -148,11 +128,11 @@ export default function DeepWebAuditModal({
 
         {/* Modal Content */}
         <div className="p-6 space-y-6 overflow-y-auto flex-1">
-          {/* Deep Factual Search Governance Policy */}
+          {/* Provider evidence handling policy */}
           <div className="p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800 flex items-start gap-3">
             <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
             <div className="text-xs space-y-1">
-              <span className="font-bold text-zinc-200">Strict Anti-Hallucination & Factual Verification</span>
+              <span className="font-bold text-zinc-200">Evidence-first provider handling</span>
               <p className="text-zinc-400 leading-relaxed">
                 Provider evidence is shown when available. If an email, social handle, or phone number is unlisted or unsupported, it is explicitly flagged as <span className="text-orange-400 font-mono">[Not Publicly Listed]</span> rather than guessed.
               </p>
@@ -164,10 +144,10 @@ export default function DeepWebAuditModal({
             <div className="space-y-0.5">
               <span className="text-sm font-bold text-white flex items-center gap-2">
                 <Search className="h-4 w-4 text-orange-400" />
-                Deep LinkedIn & Web Adaptability Crawl
+                Provider evidence review
               </span>
               <p className="text-xs text-zinc-400">
-                Verify employee decision-makers and test domain/link rot stability over time.
+                Check configured provider responses and show unavailable states when no evidence-returning provider is configured.
               </p>
             </div>
             <button
@@ -179,12 +159,12 @@ export default function DeepWebAuditModal({
               {loading ? (
                 <>
                   <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  <span>Auditing Web Footprint...</span>
+                  <span>Checking providers...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="h-3.5 w-3.5" />
-                  <span>Run Factual Verification</span>
+                  <span>Refresh provider evidence</span>
                 </>
               )}
             </button>
@@ -194,15 +174,15 @@ export default function DeepWebAuditModal({
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
               <Award className="h-3.5 w-3.5 text-orange-400" />
-              Verified Factual Contact Details
+              Contact fields returned by the provider or already on this lead
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Verified Phone</span>
+                <span className="text-[10px] font-bold text-zinc-500 uppercase">Phone on record</span>
                 <p className="text-xs font-mono font-medium text-zinc-200">{verifiedPhone}</p>
               </div>
               <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase">Verified Email</span>
+                <span className="text-[10px] font-bold text-zinc-500 uppercase">Email on record</span>
                 <p className="text-xs font-mono font-medium text-zinc-200">{verifiedEmail}</p>
               </div>
             </div>
@@ -214,7 +194,7 @@ export default function DeepWebAuditModal({
               <Linkedin className="h-3.5 w-3.5 text-blue-400" />
               LinkedIn Company Intelligence & Decision Makers
             </h3>
-            {linkedinData ? (
+            {linkedinData && linkedinData.status !== 'unavailable' ? (
               <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
                   <div>
@@ -265,13 +245,13 @@ export default function DeepWebAuditModal({
               <div className="p-6 rounded-xl bg-zinc-950 border border-zinc-800/80 text-center space-y-2">
                 <Linkedin className="h-8 w-8 text-zinc-600 mx-auto" />
                 <p className="text-xs text-zinc-400">
-                  LinkedIn profile intelligence has not been audited yet.
+                  LinkedIn intelligence is unavailable because no evidence-returning provider is configured.
                 </p>
                 <button
                   onClick={handleRunDeepAudit}
                   className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors cursor-pointer"
                 >
-                  Click to scan LinkedIn profiles →
+                  No LinkedIn records will be generated without a dedicated provider →
                 </button>
               </div>
             )}
@@ -306,7 +286,7 @@ export default function DeepWebAuditModal({
               </div>
             ) : (
               <div className="p-5 rounded-xl bg-zinc-950 border border-zinc-800 text-center text-xs text-zinc-500">
-                Web Adaptability monitor not triggered yet. Run verification above to inspect link stability.
+                Web Adaptability monitor not triggered yet. Run the provider review above to inspect configured link checks.
               </div>
             )}
           </div>
@@ -315,7 +295,7 @@ export default function DeepWebAuditModal({
         {/* Modal Footer */}
         <div className="p-4 border-t border-zinc-800 bg-zinc-950 flex items-center justify-between">
           <span className="text-xs text-zinc-400">
-            All data sources verified against active citations.
+            Each field must be checked against its listed provider source. Unavailable fields are not inferred.
           </span>
           <button
             onClick={onClose}

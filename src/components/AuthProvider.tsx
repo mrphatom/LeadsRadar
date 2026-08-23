@@ -10,10 +10,9 @@ import {
   signInAnonymously,
   updateProfile
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { apiFetch } from '../apiClient';
-import { PREPOPULATED_LEADS } from '../seedData';
 
 export interface UserProfile {
   uid: string;
@@ -43,13 +42,11 @@ interface AuthContextType {
   gmailAccessToken: string | null;
   connectGmail: () => Promise<void>;
   disconnectGmail: () => Promise<void>;
-  connectOutlook: (email: string) => Promise<void>;
-  disconnectOutlook: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const initializeNewUserProfileAndLeads = async (
+const initializeNewUserProfile = async (
   uid: string,
   email: string,
   displayName: string,
@@ -59,11 +56,10 @@ const initializeNewUserProfileAndLeads = async (
     const userRef = doc(db, 'users', uid);
     const userDoc = await getDoc(userRef);
     if (userDoc.exists()) {
-      return; // Prevents overwriting existing profiles
+      return;
     }
 
-    const batch = writeBatch(db);
-    batch.set(userRef, {
+    await setDoc(userRef, {
       uid,
       email: email || '',
       displayName: displayName || 'Outreach Member',
@@ -74,22 +70,8 @@ const initializeNewUserProfileAndLeads = async (
       trialExpires: '',
       createdAt: new Date().toISOString()
     });
-
-    for (const item of PREPOPULATED_LEADS) {
-      const seedId = `seed_${item.id}_${uid}`;
-      const seedLeadRef = doc(db, 'leads', seedId);
-      batch.set(seedLeadRef, {
-        ...item,
-        id: seedId,
-        ownerId: uid,
-        createdAt: new Date().toISOString()
-      });
-    }
-
-    await batch.commit();
-    console.log("Successfully seeded user profile and 5 demo leads in database atomic batch.");
   } catch (err) {
-    console.warn("Failed atomic registration seed builder:", err);
+    console.warn("Failed to initialize the user profile:", err);
   }
 };
 
@@ -123,8 +105,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           subscriptionId: ''
         });
 
-        // Safely register or seeds the profile only if it does not exist already
-        await initializeNewUserProfileAndLeads(
+        // Initialize an empty profile only if it does not exist already.
+        await initializeNewUserProfile(
           currentUser.uid,
           currentUser.email || '',
           currentUser.displayName || '',
@@ -224,8 +206,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         displayName: name
       });
 
-      // Initialize workspace db profile and seed leads atomically
-      await initializeNewUserProfileAndLeads(createdUser.uid, createdUser.email || '', name, '');
+      // Initialize an empty workspace profile.
+      await initializeNewUserProfile(createdUser.uid, createdUser.email || '', name, '');
     } catch (error) {
       console.error('Email sign up error:', error);
       throw error;
@@ -237,20 +219,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const userCredential = await signInAnonymously(auth);
         const guestUser = userCredential.user;
-        await initializeNewUserProfileAndLeads(guestUser.uid, 'guest@leadsradar.local', 'Demo Guest', '');
-        return;
-      } catch (anonErr: any) {
-        // Fallback to shared demo account if anonymous auth is disabled in Firebase console
-        const demoEmail = "demo@leadsradar.local";
-        const demoPass = "LeadsRadar2026Demo";
-        try {
-          await signInWithEmailAndPassword(auth, demoEmail, demoPass);
-        } catch (emailErr: any) {
-          const cred = await createUserWithEmailAndPassword(auth, demoEmail, demoPass);
-          const demoUser = cred.user;
-          await updateProfile(demoUser, { displayName: "Demo Guest" });
-          await initializeNewUserProfileAndLeads(demoUser.uid, demoEmail, "Demo Guest", "");
-        }
+        await initializeNewUserProfile(guestUser.uid, '', 'Guest User', '');
+      } catch (anonErr) {
+        throw new Error('Guest access is unavailable. Please use a personal account.');
       }
     } catch (error) {
       console.error('Guest sign-in error:', error);
@@ -333,35 +304,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const connectOutlook = async (outlookEmail: string) => {
-    if (!user) return;
-    try {
-      // Mock Sandbox outlook persistence
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
-        outlookConnected: true,
-        outlookEmail: outlookEmail
-      }, { merge: true });
-    } catch (err) {
-      console.error("connectOutlook action error:", err);
-      throw err;
-    }
-  };
-
-  const disconnectOutlook = async () => {
-    if (!user) return;
-    try {
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
-        outlookConnected: false,
-        outlookEmail: null
-      }, { merge: true });
-    } catch (err) {
-      console.error("disconnectOutlook action error:", err);
-      throw err;
-    }
-  };
-
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -374,9 +316,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logout,
       gmailAccessToken,
       connectGmail,
-      disconnectGmail,
-      connectOutlook,
-      disconnectOutlook
+      disconnectGmail
     }}>
       {children}
     </AuthContext.Provider>
