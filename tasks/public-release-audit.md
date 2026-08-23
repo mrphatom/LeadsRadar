@@ -2,9 +2,9 @@
 
 ## Release position
 
-The public-release hardening pass was completed on branch `fix/evidence-first-discovery`. The branch is pushed to `mrphatom/LeadsRadar` at commit `e885f705caa16833b9c09717212a0407f57d2324`, while the repository default branch `main` remains unchanged. GitHub Actions run `32670345533` completed successfully for this final commit.
+The public-release hardening pass was completed on branch `fix/evidence-first-discovery`. The branch is pushed to `mrphatom/LeadsRadar` at commit `981d9b048d93a3abc61cebe5650fd0dfb6da7d65`, while the repository default branch `main` remains unchanged. GitHub Actions run `32670435833` completed successfully for this final commit.
 
-This is a code and release-readiness audit, not a claim that the current Render production URL is healthy. The live service was previously switched to the feature branch with explicit confirmation, but its last observed deployment was an older commit and failed during startup because the required MoonPay configuration was absent. No secret value was viewed, entered, rotated, or changed, and no redeploy was triggered during this pass.
+The authorized Render redeploy completed successfully and the live origin is now responding. No secret value was viewed, entered, rotated, or changed by the agent. Billing is reported as unavailable because the four MoonPay variables are not configured, while the core service remains healthy under the new capability-isolation behavior.
 
 ## Validation evidence
 
@@ -17,7 +17,7 @@ This is a code and release-readiness audit, not a claim that the current Render 
 | Dependency audits | Passed | `npm audit --audit-level=high` and `npm audit --omit=dev --audit-level=high` both reported zero vulnerabilities. |
 | Whitespace | Passed | `git diff --check` and staged diff checks completed without findings. |
 | Secret scan | Passed with documented fixtures | No live-looking provider credentials or private keys were found. The repository contains an intentionally public Firebase browser configuration and a clearly labeled MoonPay test fixture used by unit tests; neither is a production secret. |
-| CI | Passed | GitHub Actions run `32670345533`, commit `e885f70`, conclusion `success`. |
+| CI | Passed | GitHub Actions run `32670435833`, commit `981d9b0`, conclusion `success`. |
 
 The current production build emits a non-fatal large-chunk warning: the main client asset is approximately 787.8 kB minified and 201.7 kB gzip. This is a measurable optimization opportunity, not a release failure; it should be addressed in a separate route/dependency-splitting track with before-and-after measurements.
 
@@ -39,13 +39,15 @@ A separate configured Playwright browser could not run because its Firefox execu
 
 ## Render handoff
 
-The live Render service remains unverified after the final branch push because no redeploy was authorized during this pass. The last observed deployment, `dep-da5m7nbtqb8s73atnrlg`, built successfully from the earlier branch commit but failed at startup because these variable names were absent: `MOONPAY_PUBLISHABLE_KEY`, `MOONPAY_SECRET_KEY`, `MOONPAY_WEBHOOK_SECRET`, and `TREASURY_WALLET_ADDRESS`. The user must enter those values privately in the Render service environment, or intentionally operate with billing unavailable under the new code contract. No values should be sent in chat or committed to Git.
+The authorized Render redeploy of the final branch completed successfully. The service is live at `https://leadsradar.onrender.com`. `/healthz` returned `{"status":"ok"}` with HTTP 200 and `/readyz` returned `{"status":"ready"}` with HTTP 200. The live root returned HTTP 200 and rendered the evidence-first AuthView after Firebase auth bootstrap. The public `/api/config` response reported `discoveryProvider: google-places-api`, `discoveryAvailable: false`, `guidanceAvailable: true`, and `billingAvailable: false`; this is an honest provider-configuration state, not a synthetic fallback.
 
-After the environment decision is complete, a fresh point-of-action confirmation is required before any redeploy. Only after a successful deployment should `/healthz`, `/readyz`, the auth entry screen, provider-unavailable behavior, and a non-destructive authenticated discovery flow be checked against the live origin. Payment sandbox and Gmail delivery tests require the user’s own provider credentials and must not be simulated as successful.
+Live security/API smoke checks also passed. Helmet headers included strict CSP, HSTS, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, same-origin opener policy, and a strict referrer policy. Unauthenticated MoonPay signing and search requests both returned stable `UNAUTHORIZED` responses with HTTP 401. No payment, authenticated discovery, Gmail delivery, or destructive operation was started.
+
+Billing can be enabled only after the user privately configures `MOONPAY_PUBLISHABLE_KEY`, `MOONPAY_SECRET_KEY`, `MOONPAY_WEBHOOK_SECRET`, and `TREASURY_WALLET_ADDRESS` in Render and authorizes a later redeploy. No values should be sent in chat or committed to Git.
 
 ## Remaining follow-up work
 
-The remaining items are bounded and explicit. The first is a live Render redeploy and health verification after the user privately configures or intentionally leaves billing disabled. The second is a full real-browser viewport matrix once a browser runtime is available. The third is measured main-bundle reduction. The fourth is a separate, isolated patch/minor dependency update review; major migrations for Vite, Express, TypeScript, `@google/genai`, and plugin-react were intentionally deferred because they require separate changelog review and compatibility testing.
+The remaining items are bounded and explicit. The first is optional MoonPay configuration followed by a separately authorized redeploy if paid billing is required. The second is a full real-browser viewport matrix once a browser runtime is available. The third is measured main-bundle reduction. The fourth is a separate, isolated patch/minor dependency update review; major migrations for Vite, Express, TypeScript, `@google/genai`, and plugin-react were intentionally deferred because they require separate changelog review and compatibility testing.
 
 ## Official references
 
