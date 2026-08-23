@@ -232,6 +232,10 @@ export default function SearchScanner({ onLeadsDiscovered, discoveryAvailable, o
   };
 
   const handleTriggerWeeklySync = async () => {
+    if (!schedulerActive) {
+      setSyncLogs(['[INFO] Manual territory plan is paused. Enable the planner before running a provider sync.']);
+      return;
+    }
     if (selectedCities.length === 0) {
       setSyncLogs(["[ERROR] No active territories selected. Please check at least one region to run synchronization."]);
       return;
