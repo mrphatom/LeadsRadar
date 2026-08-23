@@ -38,9 +38,6 @@ import {
 
 dotenv.config();
 const runtimeConfig = getRuntimeConfig(process.env);
-if (runtimeConfig.isProduction && !process.env.GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY is required in production.");
-}
 
 const app = express();
 
@@ -102,8 +99,8 @@ try {
           });
           console.log("Firebase Admin initialized using FIREBASE_SERVICE_ACCOUNT environment key.");
         } catch (parseErr) {
-          console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT. Falling back to default credentials:", parseErr);
-          adminApp = initAdminApp({ projectId: firebaseConfig.projectId });
+          console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT; server-side Firebase initialization is unavailable.", parseErr);
+          throw new Error("FIREBASE_SERVICE_ACCOUNT must contain valid JSON.");
         }
       } else {
         adminApp = initAdminApp({ projectId: firebaseConfig.projectId });
@@ -117,10 +114,27 @@ try {
     logEvent("info", "firebase_admin_initialized", undefined, { hasServiceAccount: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT) });
   } else {
     console.warn("No firebase-applet-config.json configuration detected.");
+    if (runtimeConfig.isProduction) {
+      throw new Error("firebase-applet-config.json is required for production server initialization.");
+    }
   }
 } catch (err) {
-  console.error("Failed to initialize server-side Firestore instance:", err);
+  console.error("Failed to initialize server-side Firebase Admin services.", err);
+  if (runtimeConfig.isProduction) {
+    throw err;
+  }
 }
+
+app.get("/healthz", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.status(200).json({ status: "ok" });
+});
+
+app.get("/readyz", (_req, res) => {
+  const ready = Boolean(db && adminAuth);
+  res.setHeader("Cache-Control", "no-store");
+  res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "not_ready" });
+});
 
 const hasGeminiApiKey = !!process.env.GEMINI_API_KEY;
 const hasGooglePlacesApiKey = Boolean(runtimeConfig.googlePlacesApiKey);
@@ -790,7 +804,15 @@ async function startServer() {
     console.log("Vite development middleware configured.");
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        const fileName = path.basename(filePath);
+        const isFingerprintAsset = /\.[a-f0-9]{8,}\./i.test(fileName);
+        res.setHeader("Cache-Control", isFingerprintAsset
+          ? "public, max-age=31536000, immutable"
+          : "no-cache");
+      },
+    }));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });

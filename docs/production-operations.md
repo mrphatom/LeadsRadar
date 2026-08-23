@@ -2,7 +2,7 @@
 
 ## Runtime contract
 
-LeadsRadar runs as a Vite-built browser application plus the bundled Express server in `dist/server.cjs`. Production must run with `NODE_ENV=production`, an HTTPS `APP_URL`, a valid `ENCRYPTION_KEY`, a Firebase Admin service-account configuration, and a server-side Google Places API key. Gemini is optional and is used only for clearly labeled generated guidance. Discovery and enrichment fail closed when Google Places is unavailable; no demo or synthetic lead fallback is permitted.
+LeadsRadar runs as a Vite-built browser application plus the bundled Express server in `dist/server.cjs`. Production must run on **Node.js 22 or newer** because the application uses Firebase Admin SDK 14. Production must also run with `NODE_ENV=production`, an HTTPS `APP_URL`, a valid `ENCRYPTION_KEY`, a Firebase Admin service-account configuration, and a server-side Google Places API key. Gemini is optional and is used only for clearly labeled generated guidance. Discovery and enrichment fail closed when Google Places is unavailable; no demo or synthetic lead fallback is permitted.
 
 | Variable | Required | Purpose |
 |---|---:|---|
@@ -24,6 +24,12 @@ LeadsRadar runs as a Vite-built browser application plus the bundled Express ser
 | `MOONPAY_MONTHLY_AMOUNT` / `MOONPAY_YEARLY_AMOUNT` | No | Locked fiat plan amounts; defaults to `7` and `64`. |
 | `JSON_BODY_LIMIT` | No | Express request limit; defaults to `256kb`. |
 | `FIREBASE_*` client values | Yes | Existing browser Firebase configuration used by the client application. |
+
+## Health probes
+
+`GET /healthz` is an unauthenticated liveness probe and returns `200` with `{ "status": "ok" }` when the process is running. `GET /readyz` is an unauthenticated readiness probe and returns `200` only after Firebase Admin Auth and Firestore clients initialize; otherwise it returns `503`. Both responses are non-cacheable and contain no credentials or provider data. Configure the hosting platform to use `/healthz` for liveness and `/readyz` for readiness.
+
+In production, malformed `FIREBASE_SERVICE_ACCOUNT` JSON or a missing `firebase-applet-config.json` causes startup to fail rather than silently falling back to a potentially incorrect credential source. When `FIREBASE_SERVICE_ACCOUNT` is omitted, the deployment must provide valid Google Application Default Credentials through its managed runtime.
 
 ## Authentication and authorization
 
@@ -69,10 +75,17 @@ npm run lint
 npm test
 npm run build
 npm run audit
+npm run audit:runtime
 git diff --check
 ```
 
-The CI workflow runs these checks automatically. The high-severity audit gate currently passes after non-breaking dependency remediation; remaining moderate transitive advisories should be reviewed when upgrading Firebase Admin and its Google Cloud dependency tree.
+The CI workflow runs these checks automatically. The Firebase Admin 14 migration must be validated on Node 22 in CI and in the deployment runtime. Root npm overrides pin `uuid` to `11.1.1` and `@opentelemetry/core` to `2.8.0`. The first covers the supported Google Cloud Storage 7.x uuid range; the second covers the Firebase CLI 15 Pub/Sub telemetry range. Both were tested against the application and Firestore emulator suites. Re-evaluate and remove each override when its supported upstream dependency graph no longer needs it; do not replace this policy with `npm audit fix --force`.
+
+## Node and dependency migration
+
+Firebase Admin SDK 14 is a breaking major release. It drops Node.js 18 and 20 support, so the deployment image, local runtime, CI setup, and any process manager configuration must all use Node.js 22 or newer. The application uses modern Admin entrypoints and does not use the removed legacy namespace, Instance ID API, or legacy FCM messaging methods. Keep the previous immutable artifact available for rollback, but do not roll back only the server dependency while retaining a client or rules artifact that expects a different API contract.
+
+The dependency migration is complete only when `npm ci --ignore-scripts` reproduces the committed lockfile, the application and Firestore emulator suites pass, the production build succeeds, the server starts with production configuration, and `npm audit --omit=dev` is reviewed. Do not use broad npm overrides or `npm audit fix --force` as a substitute for the supported Firebase Admin upgrade.
 
 ## Rollback
 

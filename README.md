@@ -53,7 +53,7 @@ The application keeps business identity and contact facts separate from optional
 ## 📦 Getting Started & Commands
 
 ### Prerequisites
-Make sure you have Node.js installed on your machine. Be sure to configure `.env` variables accordingly.
+Use **Node.js 22 or newer**. Firebase Admin SDK 14 requires Node 22+, and the repository pins the expected major runtime in `.nvmrc`. Be sure to configure `.env` variables according to [`docs/deployment-secrets.md`](docs/deployment-secrets.md).
 
 ```env
 # .env.example
@@ -64,9 +64,9 @@ ENCRYPTION_KEY=your_server_side_encryption_key_here
 ```
 
 ### Installation
-1. Install necessary workspace dependencies:
+1. Install the locked workspace dependencies:
    ```bash
-   npm install
+   npm ci --ignore-scripts
    ```
 
 2. Run the local development server:
@@ -87,7 +87,7 @@ ENCRYPTION_KEY=your_server_side_encryption_key_here
 
 ## Production deployment
 
-LeadsRadar defaults to fail-closed production behavior. Configure `NODE_ENV=production`, an HTTPS `APP_URL`, `GOOGLE_PLACES_API_KEY`, `FIREBASE_SERVICE_ACCOUNT`, and `ENCRYPTION_KEY` with at least 32 UTF-8 bytes. `GEMINI_API_KEY` is optional and is used only for clearly labeled generated guidance. MoonPay billing additionally requires `MOONPAY_PUBLISHABLE_KEY`, `MOONPAY_SECRET_KEY`, `MOONPAY_WEBHOOK_SECRET`, and `TREASURY_WALLET_ADDRESS`; set `MOONPAY_ENVIRONMENT=sandbox` locally and `production` in production. Optional pricing/currency values are `MOONPAY_BASE_CURRENCY_CODE`, `MOONPAY_CURRENCY_CODE`, `MOONPAY_MONTHLY_AMOUNT`, and `MOONPAY_YEARLY_AMOUNT`. See [`docs/production-operations.md`](docs/production-operations.md) for the complete environment contract, MoonPay signed checkout and webhook setup, credential-storage model, incident checks, and rollback procedure. For a safe local provider test, follow [`docs/moonpay-sandbox-testing.md`](docs/moonpay-sandbox-testing.md).
+LeadsRadar defaults to fail-closed production behavior. Run the server on **Node.js 22 or newer** and configure `NODE_ENV=production`, an HTTPS `APP_URL`, `GOOGLE_PLACES_API_KEY`, `FIREBASE_SERVICE_ACCOUNT`, and `ENCRYPTION_KEY` with at least 32 UTF-8 bytes. `GEMINI_API_KEY` is optional and is used only for clearly labeled generated guidance. MoonPay billing additionally requires `MOONPAY_PUBLISHABLE_KEY`, `MOONPAY_SECRET_KEY`, `MOONPAY_WEBHOOK_SECRET`, and `TREASURY_WALLET_ADDRESS`; set `MOONPAY_ENVIRONMENT=sandbox` locally and `production` in production. Optional pricing/currency values are `MOONPAY_BASE_CURRENCY_CODE`, `MOONPAY_CURRENCY_CODE`, `MOONPAY_MONTHLY_AMOUNT`, and `MOONPAY_YEARLY_AMOUNT`. See [`docs/deployment-secrets.md`](docs/deployment-secrets.md) for the complete secret acquisition/configuration guide and [`docs/production-operations.md`](docs/production-operations.md) for the environment contract, MoonPay signed checkout and webhook setup, credential-storage model, incident checks, and rollback procedure. For a safe local provider test, follow [`docs/moonpay-sandbox-testing.md`](docs/moonpay-sandbox-testing.md).
 
 All protected API calls require a verified Firebase ID token. Pro access and subscription state are server-authoritative and are never granted from browser localStorage or a client-controlled Firestore write. Gmail tokens are encrypted and stored outside the client-readable profile document. Google Places discovery responses expose provider citations, source IDs, and retrieval timestamps. There is no demo/mock lead fallback: if the provider is unavailable or unconfigured, discovery and enrichment return an unavailable response. Existing synthetic legacy records are hidden from the active workspace but are not deleted automatically.
 
@@ -111,6 +111,7 @@ npm run lint
 npm test
 npm run build
 npm run audit
+npm run audit:runtime
 git diff --check
 ```
 

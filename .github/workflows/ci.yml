@@ -19,7 +19,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install locked dependencies
@@ -40,5 +40,8 @@ jobs:
       - name: Check diff whitespace
         run: git diff --check
 
-      - name: Audit high-severity production dependencies
+      - name: Audit high-severity dependencies
         run: npm run audit
+
+      - name: Audit high-severity runtime dependencies
+        run: npm run audit:runtime
