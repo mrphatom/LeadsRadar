@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { 
   Building2, Globe, Search, PlusCircle, Download, RefreshCw, 
   Grid, List, SlidersHorizontal, Trash2, CheckSquare, Sparkles, 
@@ -7,16 +7,16 @@ import {
 } from 'lucide-react';
 import { BusinessLead, CountryType, LeadStatus } from './types';
 import SearchScanner from './components/SearchScanner';
-import AnalyticsDashboard from './components/AnalyticsDashboard';
+const AnalyticsDashboard = lazy(() => import('./components/AnalyticsDashboard'));
+const SecurityAuditModal = lazy(() => import('./components/SecurityAuditModal'));
+const LeadDetailsModal = lazy(() => import('./components/LeadDetailsModal'));
+const AddLeadModal = lazy(() => import('./components/AddLeadModal'));
+const CheckoutSandbox = lazy(() => import('./components/CheckoutSandbox'));
+const SubscriptionModal = lazy(() => import('./components/SubscriptionModal'));
 import LeadCard, { LeadCardSkeleton } from './components/LeadCard';
-import SecurityAuditModal from './components/SecurityAuditModal';
 import { checkGuestSearchLimit, checkGuestSaveLimit } from './services/guestAuditService';
-import LeadDetailsModal from './components/LeadDetailsModal';
-import AddLeadModal from './components/AddLeadModal';
 import { AuthProvider, useAuth } from './components/AuthProvider';
 import { AuthView } from './components/AuthView';
-import CheckoutSandbox from './components/CheckoutSandbox';
-import SubscriptionModal from './components/SubscriptionModal';
 import { PREPOPULATED_LEADS } from './seedData';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { apiFetch } from './apiClient';
@@ -631,7 +631,7 @@ function AppContent() {
 
   // Development-only payment simulator; production checkout returns only provider URLs.
   if (import.meta.env.DEV && user && window.location.pathname === '/checkout-sandbox') {
-    return <CheckoutSandbox />;
+    return <Suspense fallback={<div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center text-sm">Loading checkout…</div>}><CheckoutSandbox /></Suspense>;
   }
 
   // Not logged in -> Show Sign in panel
@@ -827,7 +827,9 @@ function AppContent() {
 
         {/* TAB CONTROLS RENDERING */}
         {viewTab === 'analytics' ? (
-          <AnalyticsDashboard leads={leads} />
+          <Suspense fallback={<div className="h-48 rounded-2xl border border-zinc-800 bg-zinc-900/40 animate-pulse" aria-label="Loading analytics" />}>
+            <AnalyticsDashboard leads={leads} />
+          </Suspense>
         ) : (
           <div className="space-y-6">
             
@@ -1044,33 +1046,41 @@ function AppContent() {
 
       {/* CRM Details Modal Drawer */}
       {selectedLead && (
-        <LeadDetailsModal
-          lead={selectedLead}
-          onClose={() => setSelectedLead(null)}
-          onUpdateLead={handleUpdateLead}
-          onUpgradeClick={() => setIsSubscriptionModalOpen(true)}
-        />
+        <Suspense fallback={null}>
+          <LeadDetailsModal
+            lead={selectedLead}
+            onClose={() => setSelectedLead(null)}
+            onUpdateLead={handleUpdateLead}
+            onUpgradeClick={() => setIsSubscriptionModalOpen(true)}
+          />
+        </Suspense>
       )}
 
       {/* Subscription Pricing Checkout Portal popup */}
+      <Suspense fallback={null}>
       <SubscriptionModal 
         isOpen={isSubscriptionModalOpen}
         onClose={() => setIsSubscriptionModalOpen(false)}
       />
+      </Suspense>
 
       {/* Manual Prospect Addition Form Sheet */}
       {isAddingLead && (
-        <AddLeadModal
-          onClose={() => setIsAddingLead(false)}
-          onAddLead={handleAddManualLead}
-        />
+        <Suspense fallback={null}>
+          <AddLeadModal
+            onClose={() => setIsAddingLead(false)}
+            onAddLead={handleAddManualLead}
+          />
+        </Suspense>
       )}
 
       {/* Security & Guest Mode Governance Modal */}
+      <Suspense fallback={null}>
       <SecurityAuditModal
         isOpen={isSecurityModalOpen}
         onClose={() => setIsSecurityModalOpen(false)}
       />
+      </Suspense>
 
       {/* Modern Responsive SaaS Footer */}
       <footer className="mt-20 border-t border-zinc-800/80 bg-zinc-950/90 text-zinc-400">
