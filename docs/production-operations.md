@@ -68,3 +68,9 @@ Deploy immutable build artifacts and retain the previous release artifact. Roll 
 ## Incident checks
 
 For authentication failures, inspect request IDs and Firebase Admin initialization without logging tokens. For payment issues, inspect Paystack reference, provider status, and request ID without logging email addresses, secret keys, access tokens, or raw provider response bodies. For Gmail failures, verify the private integration document exists, the encryption key is unchanged, and the provider token has not been revoked.
+
+## Usage quotas
+
+Grounded discovery consumes a daily search allowance in a server-side Firestore usage document keyed by the verified Firebase UID and UTC calendar day. The server reads the subscription tier from the server-owned profile, applies the free or Pro limit, and increments usage transactionally. The browser’s local planner state is only a convenience and is not an entitlement boundary. The generic Express IP limiter remains a separate abuse-control layer and must not be treated as the product quota.
+
+The `usage/{uid}_{YYYY-MM-DD}` documents are written by the Admin SDK and are not client-readable or client-writable under the current deny-by-default rules. If a deployment requires tenant-level billing, pooled quotas, or refunds for provider failures, extend this module with an explicit ledger/idempotency model rather than trusting client counters.

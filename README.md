@@ -91,6 +91,10 @@ All protected API calls require a verified Firebase ID token. Pro access and sub
 
 The weekly scan planner is a manual browser-session workflow, not a persistent background scheduler. A durable scheduler requires a separately authenticated job runner and queue.
 
+Grounded lead discovery enforces the daily search allowance on the server, using the verified Firebase UID, UTC calendar day, and the subscription tier stored by the server. Free and Pro limits are not controlled by browser localStorage. The generic Express IP rate limiter is an abuse-control layer and is intentionally separate from product entitlement.
+
+Provider failures do not create verified business facts. Missing contact fields remain explicit, LinkedIn/social enrichment falls back to an unverified empty state, and synthetic development data is labeled as synthetic. Before release, follow [`docs/production-operations.md`](docs/production-operations.md) and [`security_spec.md`](security_spec.md). No Firebase rules, Paystack configuration, credential rotation, or cloud deployment is performed by the repository hardening workflow.
+
 ## Validation
 
 Use the locked dependency and production validation workflow before release:

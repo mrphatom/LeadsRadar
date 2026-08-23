@@ -5,7 +5,7 @@ import fs from "fs";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { initializeApp as initAdminApp, getApps, getApp, cert } from "firebase-admin/app";
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
@@ -15,6 +15,7 @@ import { errorHandler, logEvent, requestContext, requireAuth, requirePrincipal, 
 import { ApiError, isAllowedOrigin } from "./src/server/security.ts";
 import { createEncryptionService } from "./src/server/crypto.ts";
 import { isVerifiedPaystackTransaction, parsePaystackMetadata, verifyPaystackSignature } from "./src/server/payments.ts";
+import { consumeDailySearchQuota } from "./src/server/quotas.ts";
 import { sanitizeLeadContact } from "./src/utils/leadSanitizer.ts";
 import {
   chatAssistantSchema,
@@ -339,7 +340,7 @@ Structure:
     "websiteStatus": "No official website - Google Maps / directory only",
     "verified": false,
     "sourcePlatform": "Google Maps",
-    "verificationScore": 95,
+    "verificationScore": 0,
     "notes": "Factual description of their missing online presence and why they can benefit from a website"
   }
 ]`;
@@ -371,6 +372,24 @@ Structure:
       leads = JSON.parse(cleanText);
     }
 
+    let quota;
+    try {
+      const principal = requirePrincipal(req);
+      if (!db) {
+        return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Usage quota service is temporarily unavailable.'));
+      }
+      quota = await consumeDailySearchQuota(db, principal.uid);
+    } catch (error) {
+      logEvent('error', 'search_quota_check_failed', req, { errorName: error instanceof Error ? error.name : 'UnknownError' });
+      return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Usage quota service is temporarily unavailable.'));
+    }
+
+    if (!quota.allowed) {
+      res.setHeader('Retry-After', '86400');
+      return sendApiError(res, req, new ApiError(429, 'RATE_LIMITED', `Daily search limit reached for the ${quota.tier} plan.`));
+    }
+    res.setHeader('X-Search-Quota-Remaining', String(quota.remaining));
+
     // A model response is only eligible for verified flags when grounding evidence exists.
     const citations = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     leads = leads.map((lead: any, index: number) => {
@@ -391,6 +410,7 @@ Structure:
       leads, 
       source: "google-search-grounding",
       citations,
+      quota: { tier: quota.tier, used: quota.used, limit: quota.limit, remaining: quota.remaining, day: quota.day },
       warning: citations.length > 0 ? undefined : "No grounding citations were returned; treat these records as unverified."
     });
   } catch (error: any) {
@@ -591,8 +611,23 @@ IMPORTANT: Do not hallucinate private personal emails or unlisted phones. Only r
 
     const text = resp.text ? resp.text.trim() : "{}";
     const parsed = JSON.parse(text.replace(/```json/gi, '').replace(/```/g, '').trim());
+    const citations = resp.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const companyIntelligence = {
+      ...parsed,
+      companyName: typeof parsed.companyName === 'string' ? parsed.companyName : companyName,
+      verifiedSocialFootprint: citations.length > 0 && parsed.verifiedSocialFootprint === true,
+      keyDecisionMakers: citations.length > 0 && Array.isArray(parsed.keyDecisionMakers) ? parsed.keyDecisionMakers : [],
+      summary: citations.length > 0
+        ? parsed.summary
+        : 'No grounding citations were returned; LinkedIn company and decision-maker details are unverified.',
+    };
 
-    res.json({ companyIntelligence: parsed, source: "gemini" });
+    res.json({
+      companyIntelligence,
+      citations,
+      source: "gemini",
+      warning: citations.length > 0 ? undefined : "No grounding citations were returned; treat LinkedIn details as unverified.",
+    });
   } catch (err: any) {
     logEvent('warn', 'linkedin_provider_failed', req, { errorName: err instanceof Error ? err.name : 'UnknownError' });
     if (!runtimeConfig.allowDemoMode) {

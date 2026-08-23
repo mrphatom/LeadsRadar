@@ -155,3 +155,13 @@ Here are 12 specific payloads attempting to spoof identity, bypass state transit
 ## 3. Test Runner Design
 
 All security rules must enforce rejection of any payload violating these conditions by verifying `request.auth.uid` against the object structure and enforcing strict field/type checks.
+
+## 4. Implemented Firestore Contract
+
+The deployed rules must remain aligned with `firestore.rules`. User profile reads are owner-only; profile creates are restricted to a free, non-subscription state; client profile updates are limited to presentation and integration-status fields; and subscription, payment-reference, and credential fields are server-authoritative. Gmail encrypted material belongs under `users/{uid}/integrations/gmail`, which is an Admin SDK path and is not readable or writable by the browser client.
+
+Lead documents are owner-only for reads, creates, updates, and deletes. Creates and updates enforce bounded fields, supported status values, immutable `ownerId`, `id`, and `createdAt`, and the provenance-aware fields `dataQuality`, `verificationSummary`, `sourcePlatform`, and `verificationScore`. Search history documents are owner-only, create-only, bounded, and require the authenticated `userId`.
+
+## 5. Required Behavioral Rule Tests
+
+Before production rules deployment, run authenticated and unauthenticated emulator tests covering owner-only profile reads, cross-user profile denial, rejection of client subscription-field changes, lead ownership and immutable-key enforcement, unknown-key rejection, timestamp immutability, query-history ownership, and synthetic/unverified provenance field acceptance. Syntax compilation alone is not sufficient evidence that these authorization invariants hold.

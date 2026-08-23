@@ -25,6 +25,11 @@ export default function AnalyticsDashboard({ leads }: AnalyticsDashboardProps) {
   // Outreach Metrics
   const contactedRate = totalLeads ? Math.round((contactedLeads / totalLeads) * 100) : 0;
   const winRate = contactedLeads ? Math.round((wonLeads / contactedLeads) * 100) : 0;
+  const websiteAssessedLeads = leads.filter((lead) => Boolean(lead.websiteStatus?.trim()));
+  const weblessLeads = websiteAssessedLeads.filter((lead) => /no official website|directory only|not verified|not publicly listed|no website/i.test(lead.websiteStatus || '')).length;
+  const weblessRate = websiteAssessedLeads.length
+    ? Math.round((weblessLeads / websiteAssessedLeads.length) * 100)
+    : null;
 
   // Country Breakdown
   const countryCounts = leads.reduce((acc, lead) => {
@@ -79,7 +84,10 @@ export default function AnalyticsDashboard({ leads }: AnalyticsDashboardProps) {
         <div className="bg-zinc-900/50 p-5 rounded-3xl border border-zinc-800 flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Webless Ratio</span>
-            <span className="text-2xl font-bold font-mono tracking-tight text-indigo-400 mt-1 block">100%</span>
+            <span className="text-2xl font-bold font-mono tracking-tight text-indigo-400 mt-1 block">
+              {weblessRate === null ? '—' : `${weblessRate}%`}
+            </span>
+            <span className="text-[10px] text-zinc-500">{websiteAssessedLeads.length ? 'of assessed leads' : 'not assessed'}</span>
           </div>
           <div className="p-3 bg-zinc-950 rounded-xl text-indigo-400">
             <AlertCircle className="h-5 w-5" />

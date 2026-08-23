@@ -64,6 +64,10 @@ export default function DeepWebAuditModal({
       const newEmail = sanitizeEmail(enrichResp?.enriched?.email || lead.email, lead.name);
       const newPhone = sanitizePhone(enrichResp?.enriched?.phone || lead.phone, lead.city);
       const grounded = Array.isArray(enrichResp?.citations) && enrichResp.citations.length > 0;
+      const providerScore = typeof enrichResp?.enriched?.verificationScore === 'number'
+        ? Math.max(0, Math.min(100, Math.round(enrichResp.enriched.verificationScore)))
+        : 0;
+      const verifiedByEvidence = grounded && liResult.verifiedSocialFootprint && providerScore > 0;
 
       setLinkedinData(liResult);
       setAdaptabilityData(adaptResult);
@@ -77,10 +81,10 @@ export default function DeepWebAuditModal({
           phone: newPhone,
           linkedinIntelligence: liResult,
           webAdaptability: adaptResult,
-          verified: grounded && liResult.verifiedSocialFootprint,
-          dataQuality: grounded && liResult.verifiedSocialFootprint ? 'verified' : 'unverified',
-          verificationScore: grounded && liResult.verifiedSocialFootprint ? 94 : 0,
-          verificationSummary: grounded && liResult.verifiedSocialFootprint
+          verified: verifiedByEvidence,
+          dataQuality: verifiedByEvidence ? 'verified' : 'unverified',
+          verificationScore: verifiedByEvidence ? providerScore : 0,
+          verificationSummary: verifiedByEvidence
             ? `Deep audit completed with provider evidence. LinkedIn decision makers returned: ${liResult.keyDecisionMakers.length}.`
             : 'Deep audit completed without sufficient provider evidence to verify this business or its contacts.',
         }));
@@ -150,7 +154,7 @@ export default function DeepWebAuditModal({
             <div className="text-xs space-y-1">
               <span className="font-bold text-zinc-200">Strict Anti-Hallucination & Factual Verification</span>
               <p className="text-zinc-400 leading-relaxed">
-                Every business detail is verified against active web citations. If an email, social handle, or phone number is unlisted, it is explicitly flagged as <span className="text-orange-400 font-mono">[Not Publicly Listed]</span> rather than guessed.
+                Provider evidence is shown when available. If an email, social handle, or phone number is unlisted or unsupported, it is explicitly flagged as <span className="text-orange-400 font-mono">[Not Publicly Listed]</span> rather than guessed.
               </p>
             </div>
           </div>
