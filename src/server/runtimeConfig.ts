@@ -13,6 +13,8 @@ export interface RuntimeConfig {
   moonpayMonthlyAmount: string;
   moonpayYearlyAmount: string;
   googlePlacesApiKey?: string;
+  geminiModel: string;
+  billingAvailable: boolean;
 }
 
 function readBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -54,6 +56,18 @@ export function getRuntimeConfig(env: NodeJS.ProcessEnv): RuntimeConfig {
     throw new Error('MOONPAY_ENVIRONMENT must be production in production.');
   }
 
+  const geminiModel = (env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+  if (!/^[a-z0-9][a-z0-9.-]{2,63}$/.test(geminiModel)) {
+    throw new Error('GEMINI_MODEL must contain only lowercase letters, numbers, dots, and hyphens.');
+  }
+
+  const billingAvailable = [
+    env.MOONPAY_PUBLISHABLE_KEY,
+    env.MOONPAY_SECRET_KEY,
+    env.MOONPAY_WEBHOOK_SECRET,
+    env.TREASURY_WALLET_ADDRESS,
+  ].every((value) => Boolean(value?.trim()));
+
   const encryptionKey = env.ENCRYPTION_KEY?.trim() || undefined;
   if (isProduction && !encryptionKey) {
     throw new Error('ENCRYPTION_KEY is required in production.');
@@ -77,5 +91,7 @@ export function getRuntimeConfig(env: NodeJS.ProcessEnv): RuntimeConfig {
     moonpayMonthlyAmount: env.MOONPAY_MONTHLY_AMOUNT || '7',
     moonpayYearlyAmount: env.MOONPAY_YEARLY_AMOUNT || '64',
     googlePlacesApiKey: env.GOOGLE_PLACES_API_KEY?.trim() || undefined,
+    geminiModel,
+    billingAvailable,
   };
 }

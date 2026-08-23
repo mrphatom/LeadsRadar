@@ -173,6 +173,34 @@ test('exposes safe MoonPay defaults from runtime configuration', () => {
   );
 });
 
+test('uses a stable Gemini model default and rejects malformed overrides', () => {
+  const defaults = getRuntimeConfig({ NODE_ENV: 'development', APP_URL: 'http://localhost:3000' });
+  assert.equal(defaults.geminiModel, 'gemini-2.5-flash');
+  assert.equal(defaults.billingAvailable, false);
+
+  const configured = getRuntimeConfig({
+    NODE_ENV: 'development',
+    APP_URL: 'http://localhost:3000',
+    GEMINI_MODEL: 'gemini-3.6-flash',
+  });
+  assert.equal(configured.geminiModel, 'gemini-3.6-flash');
+
+  const billingReady = getRuntimeConfig({
+    NODE_ENV: 'development',
+    APP_URL: 'http://localhost:3000',
+    MOONPAY_PUBLISHABLE_KEY: 'public-key',
+    MOONPAY_SECRET_KEY: 'secret-key',
+    MOONPAY_WEBHOOK_SECRET: 'webhook-key',
+    TREASURY_WALLET_ADDRESS: '0x123',
+  });
+  assert.equal(billingReady.billingAvailable, true);
+
+  assert.throws(
+    () => getRuntimeConfig({ NODE_ENV: 'development', APP_URL: 'http://localhost:3000', GEMINI_MODEL: 'Gemini 3' }),
+    /GEMINI_MODEL must contain only lowercase letters/,
+  );
+});
+
 test('exposes Google Places configuration without enabling synthetic fallback', () => {
   const unavailable = getRuntimeConfig({ NODE_ENV: 'development', APP_URL: 'http://localhost:3000' });
   assert.equal(unavailable.googlePlacesApiKey, undefined);

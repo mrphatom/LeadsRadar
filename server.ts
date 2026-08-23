@@ -138,8 +138,9 @@ app.get("/readyz", (_req, res) => {
   res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "not_ready" });
 });
 
-const hasGeminiApiKey = !!process.env.GEMINI_API_KEY;
+const hasGeminiApiKey = Boolean(process.env.GEMINI_API_KEY);
 const hasGooglePlacesApiKey = Boolean(runtimeConfig.googlePlacesApiKey);
+const GEMINI_MODEL = runtimeConfig.geminiModel;
 
 // Verify or initialize Gemini for clearly labeled generated guidance only.
 let ai: GoogleGenAI | null = null;
@@ -147,11 +148,6 @@ if (hasGeminiApiKey) {
   try {
     ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
     });
     console.log("Successfully initialized Gemini Client.");
   } catch (error) {
@@ -182,6 +178,7 @@ app.get("/api/config", (_req, res) => {
     discoveryProvider: 'google-places-api',
     discoveryAvailable: hasGooglePlacesApiKey,
     guidanceAvailable: Boolean(ai),
+    billingAvailable: runtimeConfig.billingAvailable,
     message: hasGooglePlacesApiKey
       ? 'Google Places discovery is configured. Records are returned only from the provider.'
       : 'Google Places discovery is not configured. No synthetic lead fallback is available.',
@@ -354,7 +351,7 @@ Return strictly a valid raw JSON object matching the following Schema. Do not in
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -384,9 +381,6 @@ const MOONPAY_CURRENCY_CODE = runtimeConfig.moonpayCurrencyCode;
 const MOONPAY_MONTHLY_AMOUNT = runtimeConfig.moonpayMonthlyAmount;
 const MOONPAY_YEARLY_AMOUNT = runtimeConfig.moonpayYearlyAmount;
 
-if (runtimeConfig.isProduction && (!process.env.MOONPAY_PUBLISHABLE_KEY || !process.env.MOONPAY_SECRET_KEY || !process.env.MOONPAY_WEBHOOK_SECRET || !process.env.TREASURY_WALLET_ADDRESS)) {
-  throw new Error('MOONPAY_PUBLISHABLE_KEY, MOONPAY_SECRET_KEY, MOONPAY_WEBHOOK_SECRET, and TREASURY_WALLET_ADDRESS are required in production.');
-}
 
 app.get('/api/moonpay/sign-url', async (req, res) => {
   const principal = requirePrincipal(req);
@@ -394,7 +388,7 @@ app.get('/api/moonpay/sign-url', async (req, res) => {
   if (!parsed.success) {
     return sendApiError(res, req, new ApiError(422, 'VALIDATION_ERROR', 'MoonPay checkout parameters are invalid.'));
   }
-  if (!db || !process.env.MOONPAY_PUBLISHABLE_KEY || !process.env.MOONPAY_SECRET_KEY || !process.env.TREASURY_WALLET_ADDRESS) {
+  if (!db || !runtimeConfig.billingAvailable) {
     return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'MoonPay payment service is not configured.'));
   }
 
@@ -438,6 +432,10 @@ app.get('/api/moonpay/sign-url', async (req, res) => {
 });
 
 app.post('/api/webhooks/moonpay', async (req, res) => {
+  if (!db || !runtimeConfig.billingAvailable) {
+    return sendApiError(res, req, new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'MoonPay payment service is not configured.'));
+  }
+
   const signatureHeader = req.headers['moonpay-signature-v2'] ?? req.headers['moonpay-signature'];
   const normalizedSignature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
   const rawBody = req.rawBody;
@@ -519,7 +517,7 @@ Strict Schema:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -589,7 +587,7 @@ When answering:
     }));
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_MODEL,
       contents: formattedHistory,
       config: {
         systemInstruction,
@@ -772,7 +770,7 @@ Craft a professional, friendly response that builds rapport and advances the sal
     let suggestedReply: string | null = null;
     try {
       const aiResponse = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: GEMINI_MODEL,
         contents: suggestionsPrompt,
       });
       suggestedReply = aiResponse.text || null;

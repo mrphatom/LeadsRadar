@@ -2,7 +2,7 @@
 
 ## Runtime contract
 
-LeadsRadar runs as a Vite-built browser application plus the bundled Express server in `dist/server.cjs`. Production must run on **Node.js 22 or newer** because the application uses Firebase Admin SDK 14. Production must also run with `NODE_ENV=production`, an HTTPS `APP_URL`, a valid `ENCRYPTION_KEY`, a Firebase Admin service-account configuration, and a server-side Google Places API key. Gemini is optional and is used only for clearly labeled generated guidance. Discovery and enrichment fail closed when Google Places is unavailable; no demo or synthetic lead fallback is permitted.
+LeadsRadar runs as a Vite-built browser application plus the bundled Express server in `dist/server.cjs`. Production must run on **Node.js 22 or newer** because the application uses Firebase Admin SDK 14. Production must also run with `NODE_ENV=production`, an HTTPS `APP_URL`, a valid `ENCRYPTION_KEY`, a Firebase Admin service-account configuration, and a server-side Google Places API key. Gemini is optional and is used only for clearly labeled generated guidance. Discovery and enrichment fail closed when Google Places is unavailable; no demo or synthetic lead fallback is permitted. MoonPay is an independent capability: missing MoonPay configuration does not block core service readiness, but payment signing and fulfillment remain unavailable until the complete billing configuration is present.
 
 | Variable | Required | Purpose |
 |---|---:|---|
@@ -12,6 +12,7 @@ LeadsRadar runs as a Vite-built browser application plus the bundled Express ser
 | `ALLOWED_ORIGINS` | Recommended | Comma-separated additional trusted browser origins. |
 | `GOOGLE_PLACES_API_KEY` | Yes for discovery | Server-side Google Places API key. Discovery and enrichment are unavailable when absent; never expose it to the browser. |
 | `GEMINI_API_KEY` | No | Optional generated guidance only; never a source of lead identity or contact facts. |
+| `GEMINI_MODEL` | No | Tested model identifier for generated guidance; defaults to `gemini-2.5-flash`. |
 | `FIREBASE_SERVICE_ACCOUNT` | Yes | Server-side Firebase Admin credentials as a JSON string. |
 | `ENCRYPTION_KEY` | Yes | At least 32 UTF-8 bytes for authenticated Gmail-token encryption. Store in a secret manager. |
 | `MOONPAY_ENVIRONMENT` | No | `sandbox` locally and `production` in production; production mode rejects sandbox. |
@@ -27,7 +28,7 @@ LeadsRadar runs as a Vite-built browser application plus the bundled Express ser
 
 ## Health probes
 
-`GET /healthz` is an unauthenticated liveness probe and returns `200` with `{ "status": "ok" }` when the process is running. `GET /readyz` is an unauthenticated readiness probe and returns `200` only after Firebase Admin Auth and Firestore clients initialize; otherwise it returns `503`. Both responses are non-cacheable and contain no credentials or provider data. Configure the hosting platform to use `/healthz` for liveness and `/readyz` for readiness.
+`GET /healthz` is an unauthenticated liveness probe and returns `200` with `{ "status": "ok" }` when the process is running. `GET /readyz` is an unauthenticated readiness probe and returns `200` only after Firebase Admin Auth and Firestore clients initialize; otherwise it returns `503`. Readiness does not imply that optional discovery, guidance, or billing providers are configured. `/api/config` exposes non-secret capability flags so the UI can present those states honestly. Both probe responses are non-cacheable and contain no credentials or provider data. Configure the hosting platform to use `/healthz` for liveness and `/readyz` for readiness.
 
 In production, malformed `FIREBASE_SERVICE_ACCOUNT` JSON or a missing `firebase-applet-config.json` causes startup to fail rather than silently falling back to a potentially incorrect credential source. When `FIREBASE_SERVICE_ACCOUNT` is omitted, the deployment must provide valid Google Application Default Credentials through its managed runtime.
 
@@ -39,7 +40,7 @@ Premium operations are gated on the server by the server-owned user profile. Cli
 
 ## Billing
 
-MoonPay checkout initialization is server-owned. The authenticated browser requests `/api/moonpay/sign-url?period=month` or `period=year`; the server creates a pending order, builds the complete widget URL, signs it with `MOONPAY_SECRET_KEY`, and returns it. The browser launches `@moonpay/moonpay-js` in the sandbox or production environment and applies the returned signature with `updateSignature()` before showing the overlay.
+MoonPay checkout initialization is server-owned. The authenticated browser requests `/api/moonpay/sign-url?period=month` or `period=year`; the server creates a pending order, builds the complete widget URL, signs it with `MOONPAY_SECRET_KEY`, and returns it. The browser launches `@moonpay/moonpay-js` in the sandbox or production environment and applies the returned signature with `updateSignature()` before showing the overlay. If any of the four billing variables is missing, `/api/config` reports `billingAvailable: false`, the checkout control remains unavailable, and the signing and webhook endpoints return `503` without creating orders or activating subscriptions.
 
 Configure the MoonPay webhook URL as:
 
