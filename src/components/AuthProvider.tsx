@@ -95,22 +95,7 @@ const initializeNewUserProfileAndLeads = async (
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(() => {
-    const cachedTier = typeof window !== 'undefined' ? localStorage.getItem('leadsradar_subscription_tier') : null;
-    if (cachedTier === 'pro' || cachedTier === 'free') {
-      return {
-        uid: '',
-        email: '',
-        displayName: 'Outreach Member',
-        photoURL: '',
-        subscriptionTier: cachedTier as 'free' | 'pro',
-        subscriptionPeriod: 'none',
-        trialExpires: '',
-        subscriptionId: ''
-      };
-    }
-    return null;
-  });
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -126,21 +111,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(currentUser);
         const userRef = doc(db, 'users', currentUser.uid);
 
-        // Fetch user specific tier from cache
-        const userSpecificKey = `leadsradar_subscription_tier_${currentUser.uid}`;
-        let cachedTier = localStorage.getItem(userSpecificKey) as 'free' | 'pro' | null;
-        if (!cachedTier) {
-          cachedTier = (localStorage.getItem('leadsradar_subscription_tier') as 'free' | 'pro' | null) || 'free';
-          localStorage.setItem(userSpecificKey, cachedTier);
-        }
-
-        // Proactively set a solid profile details with cached tier in case we have sync hurdles
+        // Fail closed to the free plan until the server-owned profile is loaded.
         setProfile({
           uid: currentUser.uid,
           email: currentUser.email || '',
           displayName: currentUser.displayName || 'Outreach Member',
           photoURL: currentUser.photoURL || '',
-          subscriptionTier: cachedTier,
+          subscriptionTier: 'free',
           subscriptionPeriod: 'none',
           trialExpires: '',
           subscriptionId: ''
@@ -158,9 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            const resolvedTier = data.subscriptionTier || 'free';
-            localStorage.setItem('leadsradar_subscription_tier', resolvedTier);
-            localStorage.setItem(userSpecificKey, resolvedTier);
+            const resolvedTier = data.subscriptionTier === 'pro' ? 'pro' : 'free';
             setProfile({
               uid: data.uid,
               email: data.email,
@@ -177,14 +152,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               outlookEmail: data.outlookEmail || null
             });
           } else {
-            // DB record isn't seeded successfully yet, fallback gracefully to our healthy in-memory cache
-            const freshCachedTier = (localStorage.getItem(userSpecificKey) as 'free' | 'pro') || 'free';
+            // DB record is not seeded yet; keep the UI on the safe free plan.
             setProfile({
               uid: currentUser.uid,
               email: currentUser.email || '',
               displayName: currentUser.displayName || 'Outreach Member',
               photoURL: currentUser.photoURL || '',
-              subscriptionTier: freshCachedTier,
+              subscriptionTier: 'free',
               subscriptionPeriod: 'none',
               trialExpires: '',
               subscriptionId: ''
@@ -193,13 +167,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
         }, (err) => {
           console.error("User profile database sync error (permission denied or connection missing):", err);
-          const freshCachedTier = (localStorage.getItem(userSpecificKey) as 'free' | 'pro') || 'free';
-          // Standard structural fallback for profiles
+          // Standard structural fallback for profiles; never trust cached subscription state.
           setProfile({
             uid: currentUser.uid,
             email: currentUser.email || '',
             displayName: currentUser.displayName || 'Outreach Member',
-            subscriptionTier: freshCachedTier,
+            subscriptionTier: 'free',
             subscriptionPeriod: 'none',
             trialExpires: '',
             subscriptionId: ''
