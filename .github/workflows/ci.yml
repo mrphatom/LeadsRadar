@@ -2,8 +2,12 @@ name: LeadsRadar CI
 
 on:
   push:
-    branches: [main, master, feat/production-hardening, feat/moonpay-fiat-onramp]
+    branches: [main, master, feat/production-hardening, feat/moonpay-fiat-onramp, fix/evidence-first-discovery]
   pull_request:
+
+concurrency:
+  group: leadsradar-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

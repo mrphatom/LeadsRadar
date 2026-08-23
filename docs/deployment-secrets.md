@@ -45,6 +45,16 @@ MoonPay requires an approved account and separate sandbox/live credentials. Use 
 
 `firebase-applet-config.json` is used by the browser client and contains Firebase project configuration rather than an Admin private key. Confirm that it points to the intended Firebase project and named Firestore database. Enable the authentication providers used by the product and create the Firestore database before deployment. Deploying application code does not deploy Firebase rules automatically; rules deployment is a separate, explicitly reviewed operation.
 
+## Render deployment
+
+The repository includes `render.yaml`, a Blueprint for the existing Docker-based web service. It uses the checked-in `Dockerfile`, waits for CI checks before automatic deploys when the service is managed by the Blueprint, and uses `/readyz` as the health check. Render supplies `PORT` to Docker web services; the application binds to `0.0.0.0` and reads that value at runtime.
+
+Before creating or syncing the service, connect the repository and confirm the intended service, region, branch, plan, and custom domain in the Render Dashboard. Set the `sync:false` variables from this document in Render's encrypted environment settings. Set `APP_URL` and `ALLOWED_ORIGINS` to the exact final HTTPS origin, set `MOONPAY_ENVIRONMENT=production` only with matching live MoonPay credentials, and keep `ALLOW_DEMO_MODE=false`. Do not place Firebase service-account JSON, encryption keys, MoonPay secrets, or provider API keys in `render.yaml`, GitHub variables, source files, screenshots, or build logs.
+
+The repository also includes `.github/workflows/deploy-render.yml`. It is intentionally manual: configure the Render service deploy hook as the GitHub Actions environment secret `RENDER_DEPLOY_HOOK_URL`, protect the `production` environment with required reviewers if your GitHub plan supports it, and run the workflow only after the selected commit has a successful aggregate CI status. The workflow sends a specific commit reference to the hook, which makes the deployed source auditable. Render deploy-hook URLs are secrets and must be regenerated if exposed. The first creation of the Render service, environment-variable entry, deploy-hook creation, and live deployment are point-of-action operations and are not performed by repository validation.
+
+After a successful deploy, verify the Render service URL with `GET /healthz` and `GET /readyz`, sign in with a real test account, confirm provider-backed discovery with a controlled query, and verify that missing provider data remains explicitly unavailable. Keep a known-good commit available for Render manual rollback. Render can deploy a specific commit from the Dashboard; after rollback, re-run the same health and authentication checks before restoring automatic deployment.
+
 ## Container deployment
 
 The repository includes a multi-stage `Dockerfile` based on Node 22. It installs locked dependencies, builds the client and server in a build stage, and copies only production dependencies and build artifacts into the runtime image. The image runs as the non-root `node` user and does not receive secrets at build time.

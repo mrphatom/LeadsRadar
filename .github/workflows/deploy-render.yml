@@ -1,0 +1,52 @@
+name: Deploy LeadsRadar to Render
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit SHA to deploy; defaults to the workflow commit'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Trigger Render deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Check out requested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+
+      - name: Require successful CI for the selected commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DEPLOY_REF: ${{ inputs.ref || github.sha }}
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/${REPOSITORY}/commits/${DEPLOY_REF}/status" --jq '.state')"
+          if [ "$status" != "success" ]; then
+            echo "The selected commit does not have a successful aggregate CI status: $status" >&2
+            exit 1
+          fi
+
+      - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          DEPLOY_REF: ${{ inputs.ref || github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$RENDER_DEPLOY_HOOK_URL"
+          curl --fail --silent --show-error --request POST \
+            "${RENDER_DEPLOY_HOOK_URL}&ref=${DEPLOY_REF}"

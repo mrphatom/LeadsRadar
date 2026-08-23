@@ -1,0 +1,47 @@
+# Render Blueprint for the LeadsRadar production web service.
+# Secret values are intentionally not stored here. Set sync:false variables in the
+# Render Dashboard or a managed secret workflow before the first production deploy.
+
+services:
+  - type: web
+    name: leadsradar
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /readyz
+    maxShutdownDelaySeconds: 30
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ALLOW_DEMO_MODE
+        value: "false"
+      - key: APP_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: MOONPAY_ENVIRONMENT
+        value: production
+      - key: MOONPAY_PUBLISHABLE_KEY
+        sync: false
+      - key: MOONPAY_SECRET_KEY
+        sync: false
+      - key: MOONPAY_WEBHOOK_SECRET
+        sync: false
+      - key: TREASURY_WALLET_ADDRESS
+        sync: false
+      - key: MOONPAY_BASE_CURRENCY_CODE
+        value: usd
+      - key: MOONPAY_CURRENCY_CODE
+        value: usdc
+      - key: MOONPAY_MONTHLY_AMOUNT
+        value: "7"
+      - key: MOONPAY_YEARLY_AMOUNT
+        value: "64"
