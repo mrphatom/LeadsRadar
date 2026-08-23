@@ -4,6 +4,8 @@ import {
   onAuthStateChanged,
   signOut,
   signInWithPopup,
+  linkWithPopup,
+  reauthenticateWithPopup,
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -13,6 +15,7 @@ import {
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { apiFetch } from '../apiClient';
+import { setGuestSession } from '../services/guestAuditService';
 
 export interface UserProfile {
   uid: string;
@@ -71,7 +74,7 @@ const initializeNewUserProfile = async (
       createdAt: new Date().toISOString()
     });
   } catch (err) {
-    console.warn("Failed to initialize the user profile:", err);
+    console.warn("Failed to initialize the user profile:", err instanceof Error ? err.name : 'UnknownError');
   }
 };
 
@@ -91,6 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (currentUser) {
         setUser(currentUser);
+        setGuestSession(currentUser.isAnonymous);
         const userRef = doc(db, 'users', currentUser.uid);
 
         // Fail closed to the free plan until the server-owned profile is loaded.
@@ -148,7 +152,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           setLoading(false);
         }, (err) => {
-          console.error("User profile database sync error (permission denied or connection missing):", err);
+          console.error("User profile database sync error (permission denied or connection missing):", err instanceof Error ? err.name : 'UnknownError');
           // Standard structural fallback for profiles; never trust cached subscription state.
           setProfile({
             uid: currentUser.uid,
@@ -163,6 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
       } else {
+        setGuestSession(false);
         setUser(null);
         setProfile(null);
         setLoading(false);
@@ -182,7 +187,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signInWithPopup(auth, provider);
     } catch (error) {
-      console.error('Google login error:', error);
+      console.error('Google login error:', error instanceof Error ? error.name : 'UnknownError');
       throw error;
     }
   };
@@ -191,7 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (error) {
-      console.error('Email login error:', error);
+      console.error('Email login error:', error instanceof Error ? error.name : 'UnknownError');
       throw error;
     }
   };
@@ -209,7 +214,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Initialize an empty workspace profile.
       await initializeNewUserProfile(createdUser.uid, createdUser.email || '', name, '');
     } catch (error) {
-      console.error('Email sign up error:', error);
+      console.error('Email sign up error:', error instanceof Error ? error.name : 'UnknownError');
       throw error;
     }
   };
@@ -224,7 +229,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Guest access is unavailable. Please use a personal account.');
       }
     } catch (error) {
-      console.error('Guest sign-in error:', error);
+      console.error('Guest sign-in error:', error instanceof Error ? error.name : 'UnknownError');
       throw error;
     }
   };
@@ -233,7 +238,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signOut(auth);
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('Logout error:', error instanceof Error ? error.name : 'UnknownError');
       throw error;
     }
   };
@@ -247,15 +252,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
     
     try {
-      const result = await signInWithPopup(auth, provider);
+      const currentUser = user;
+      const hasLinkedGoogleProvider = currentUser.providerData.some(({ providerId }) => providerId === 'google.com');
+      const result = hasLinkedGoogleProvider
+        ? await reauthenticateWithPopup(currentUser, provider)
+        : await linkWithPopup(currentUser, provider);
+      if (result.user.uid !== currentUser.uid) {
+        throw new Error('Google account linking returned an unexpected Firebase user.');
+      }
+
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const token = credential?.accessToken;
-      const verifiedEmail = result.user.email || user.email || '';
+      const verifiedEmail = result.user.email || currentUser.email || '';
       if (!token) {
         throw new Error("No Google credentials token returned.");
       }
-      
-      setGmailAccessToken(token);
 
       // Perform secure encryption storage on backend proxy
       const response = await apiFetch('/api/gmail/connect', {
@@ -273,15 +284,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error("Local backend rejected securing encrypted refresh secrets.");
       }
       
-      // Update local profile document flag directly to trigger realtime sync
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
-        gmailConnected: true,
-        gmailEmail: verifiedEmail
-      }, { merge: true });
+      setGmailAccessToken(token);
 
     } catch (err) {
-      console.error("connectGmail action crash:", err);
+      console.error("connectGmail action crash:", err instanceof Error ? err.name : 'UnknownError');
       throw err;
     }
   };
@@ -299,7 +305,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Gmail credentials could not be disconnected.');
       }
     } catch (err) {
-      console.error("disconnectGmail action crash:", err);
+      console.error("disconnectGmail action crash:", err instanceof Error ? err.name : 'UnknownError');
       throw err;
     }
   };
