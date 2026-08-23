@@ -17,3 +17,9 @@ Implication: the repository's current `gemini-3.6-flash` and `gemini-3.5-flash` 
 - Retrieved: 2026-08-23
 - Evidence: Google provider scopes are added with `provider.addScope(...)`; after popup authentication the app can retrieve the Google OAuth access token using `GoogleAuthProvider.credentialFromResult(result)`.
 - Application implication: Gmail connection must not use `signInWithPopup` as a secondary integration flow because that can change the active Firebase principal. The implementation should link or reauthenticate the current user, verify the result UID, then send the provider access token to the server.
+
+## GitHub Actions Java runtime
+
+- Source: https://github.com/actions/setup-java — official `actions/setup-java` README, checked 2026-08-23.
+- Evidence: the official repository marks setup-java v1 through v4 as deprecated and recommends `actions/setup-java@v5` for production workflows. The v5 action upgrades the action runtime to Node 24 and remains compatible with a Temurin JDK distribution and an explicit Java 21 version.
+- Application implication: CI should use `actions/setup-java@v5` for the Firebase emulator’s Java 21 requirement; this is an isolated action-version update, not a dependency migration.
