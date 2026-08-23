@@ -24,7 +24,10 @@ export class EnterpriseErrorBoundary extends React.Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('EnterpriseErrorBoundary caught an error:', error, errorInfo);
+    console.error('EnterpriseErrorBoundary caught an error:', {
+      errorName: error.name,
+      componentStack: errorInfo.componentStack,
+    });
     this.setState({ error, errorInfo });
   }
 
@@ -53,13 +56,11 @@ export class EnterpriseErrorBoundary extends React.Component<Props, State> {
             <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
               The application encountered an unexpected runtime exception. The security and data integrity layer has isolated the event.
             </p>
-            {this.state.error && (
-              <div className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg p-3 mb-6 text-left overflow-auto max-h-32">
-                <p className="text-xs font-mono text-red-400 font-semibold break-all">
-                  {this.state.error.toString()}
-                </p>
-              </div>
-            )}
+            <div className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg p-3 mb-6 text-left">
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Reload the application to retry. If the issue continues, contact the workspace administrator with the time of the failure.
+              </p>
+            </div>
             <div className="flex items-center gap-3 w-full">
               <button
                 type="button"

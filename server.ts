@@ -101,7 +101,7 @@ try {
           });
           console.log("Firebase Admin initialized using FIREBASE_SERVICE_ACCOUNT environment key.");
         } catch (parseErr) {
-          console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT; server-side Firebase initialization is unavailable.", parseErr);
+          console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT; server-side Firebase initialization is unavailable.", parseErr instanceof Error ? parseErr.name : "UnknownError");
           throw new Error("FIREBASE_SERVICE_ACCOUNT must contain valid JSON.");
         }
       } else {
@@ -121,7 +121,7 @@ try {
     }
   }
 } catch (err) {
-  console.error("Failed to initialize server-side Firebase Admin services.", err);
+  console.error("Failed to initialize server-side Firebase Admin services.", err instanceof Error ? err.name : "UnknownError");
   if (runtimeConfig.isProduction) {
     throw err;
   }
@@ -155,7 +155,7 @@ if (hasGeminiApiKey) {
     });
     console.log("Successfully initialized Gemini Client.");
   } catch (error) {
-    console.error("Failed to initialize Gemini Client: ", error);
+    console.error("Failed to initialize Gemini Client: ", error instanceof Error ? error.name : "UnknownError");
   }
 } else {
   console.log("No GEMINI_API_KEY loaded. Generated guidance routes are unavailable; no synthetic fallback is used.");
