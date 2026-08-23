@@ -1,0 +1,38 @@
+services:
+  leadsradar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${LEADSRADAR_IMAGE:-leadsradar:node22}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${LEADSRADAR_ENV_FILE:?Set LEADSRADAR_ENV_FILE to an external production environment file}
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    ports:
+      - "${LEADSRADAR_BIND_ADDRESS:-127.0.0.1}:${LEADSRADAR_HOST_PORT:-3000}:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/readyz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

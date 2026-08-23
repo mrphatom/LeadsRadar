@@ -58,6 +58,34 @@ docker run --rm -p 3000:3000 \
 
 For a managed container platform, configure the image health checks as `GET /healthz` for liveness and `GET /readyz` for readiness. The readiness probe returns `503` until Firebase Admin Auth and Firestore initialize. Do not bake the environment file into the image; use the platform secret store instead.
 
+## Docker Compose deployment
+
+`docker-compose.production.yml` is a sample for a host that already has Docker Compose v2 and an external secret/environment file. It does not contain secret values and does not copy an environment file into the image.
+
+Create the runtime file outside the repository, restrict it to the deployment account, and populate it from the tables above:
+
+```bash
+sudo install -d -m 700 /etc/leadsradar
+sudo install -m 600 /dev/null /etc/leadsradar/production.env
+sudoedit /etc/leadsradar/production.env
+```
+
+Start or update the service with the external file path supplied at runtime:
+
+```bash
+export LEADSRADAR_ENV_FILE=/etc/leadsradar/production.env
+export LEADSRADAR_IMAGE=leadsradar:node22
+
+docker compose -f docker-compose.production.yml up -d --build
+docker compose -f docker-compose.production.yml ps
+curl --fail http://127.0.0.1:3000/healthz
+curl --fail http://127.0.0.1:3000/readyz
+```
+
+The Compose sample binds to `127.0.0.1` by default so the service is not directly exposed to the internet. Put it behind an HTTPS reverse proxy or load balancer that forwards to port `3000`. If the host firewall and proxy are intentionally configured to expose the container directly, set `LEADSRADAR_BIND_ADDRESS=0.0.0.0` only after applying the required network controls. Do not run diagnostic commands that print the merged Compose environment in shared terminals or CI logs.
+
+The container uses the external environment file only at runtime, runs as the non-root `node` user, drops Linux capabilities, enables `no-new-privileges`, uses a read-only root filesystem, and provides a bounded `/tmp`. The healthcheck calls `/readyz`, so an instance is unhealthy until Firebase Admin Auth and Firestore initialize.
+
 ## Recommended secret-manager procedure
 
 Create separate secret sets for local development, staging, and production. Use the hosting provider's encrypted environment-variable store or Google Cloud Secret Manager. Grant the deployed server identity only the minimum access required to read the secrets. Inject secrets at runtime rather than writing a `.env` file into the image or repository.
