@@ -59,7 +59,7 @@ export interface GuestUsageState {
     id: string;
     action: string;
     timestamp: string;
-    ipHash: string;
+    scope: 'browser-local';
     status: 'ALLOWED' | 'RATE_LIMITED' | 'AUDITED';
   }[];
 }

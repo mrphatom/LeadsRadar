@@ -1,41 +1,88 @@
-import React, { useState, useEffect } from 'react';
-import { ShieldAlert, ShieldCheck, Lock, Unlock, Clock, AlertTriangle, CheckCircle2, UserCheck, Eye } from 'lucide-react';
-import { GuestUsageState } from '../types';
-import { getGuestAuditState, toggleGuestMode, recordSecurityAuditLog } from '../services/guestAuditService';
+import React, { useState, useEffect, useRef } from 'react';
+import { ShieldCheck, Lock, Unlock, Clock, CheckCircle2, UserCheck, Eye } from 'lucide-react';
+import type { GuestUsageState } from '../types';
+import { getGuestAuditState, recordSecurityAuditLog } from '../services/guestAuditService';
 
 interface SecurityAuditModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onStateChanged?: (newState: GuestUsageState) => void;
+  isAnonymous: boolean;
 }
 
 export default function SecurityAuditModal({
   isOpen,
   onClose,
-  onStateChanged,
+  isAnonymous,
 }: SecurityAuditModalProps) {
   const [state, setState] = useState<GuestUsageState>(getGuestAuditState());
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (isOpen) {
-      setState(getGuestAuditState());
-      recordSecurityAuditLog('OPENED_SECURITY_AUDIT_MODAL', 'AUDITED');
+      const updated = recordSecurityAuditLog(
+        isAnonymous ? 'VIEWED_ANONYMOUS_SESSION_USAGE' : 'VIEWED_AUTHENTICATED_SESSION_USAGE',
+        'AUDITED',
+      );
+      setState({ ...updated, isGuest: isAnonymous });
     }
+  }, [isAnonymous, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus();
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleToggleGuest = () => {
-    const updated = toggleGuestMode(!state.isGuest);
-    setState(updated);
-    if (onStateChanged) {
-      onStateChanged(updated);
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4" role="presentation">
+      <div
+        ref={dialogRef}
+        className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="session-activity-title"
+        aria-describedby="session-activity-description"
+        tabIndex={-1}
+      >
         {/* Modal Header */}
         <div className="p-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/70">
           <div className="flex items-center gap-3">
@@ -43,19 +90,22 @@ export default function SecurityAuditModal({
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                Security Audit & Guest Mode Governance
+              <h2 id="session-activity-title" className="text-base font-bold text-white flex items-center gap-2">
+                Session Activity & Usage
               </h2>
-              <p className="text-xs text-zinc-400">
-                Inspect live security audit logs, API rate limiting, and guest session permissions.
+              <p id="session-activity-description" className="text-xs text-zinc-400">
+                Review this browser’s local usage snapshot. Server authentication, quotas, and permissions remain authoritative.
               </p>
             </div>
           </div>
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={onClose}
+            aria-label="Close session activity panel"
             className="text-zinc-500 hover:text-zinc-300 text-xs font-semibold px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950 hover:bg-zinc-800 transition-colors cursor-pointer"
           >
-            Close ✕
+            Close <span aria-hidden="true">✕</span>
           </button>
         </div>
 
@@ -96,26 +146,11 @@ export default function SecurityAuditModal({
               </div>
             </div>
 
-            <button
-              onClick={handleToggleGuest}
-              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
-                state.isGuest
-                  ? 'bg-orange-500 hover:bg-orange-600 text-zinc-950 shadow-md'
-                  : 'bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700'
-              }`}
-            >
-              {state.isGuest ? (
-                <>
-                  <Unlock className="h-3.5 w-3.5" />
-                  <span>Switch to Pro Mode</span>
-                </>
-              ) : (
-                <>
-                  <Lock className="h-3.5 w-3.5" />
-                  <span>Switch to Guest Mode</span>
-                </>
-              )}
-            </button>
+            <span className="max-w-[15rem] text-right text-[11px] leading-relaxed text-zinc-500">
+              {state.isGuest
+                ? 'Anonymous Firebase sessions are limited and do not replace an account.'
+                : 'Signed-in account. Server-side subscription and quota checks apply.'}
+            </span>
           </div>
 
           {/* Usage Progress Meters */}
@@ -128,7 +163,7 @@ export default function SecurityAuditModal({
                   Provider Queries
                 </span>
                 <span className="font-mono text-zinc-400">
-                  {state.isGuest ? `${state.searchesUsed} / ${state.maxSearches}` : 'Unlimited'}
+                  {state.isGuest ? `${state.searchesUsed} / ${state.maxSearches}` : 'Server-managed'}
                 </span>
               </div>
               <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-zinc-800">
@@ -156,7 +191,7 @@ export default function SecurityAuditModal({
                   Saved CRM Leads
                 </span>
                 <span className="font-mono text-zinc-400">
-                  {state.isGuest ? `${state.leadsSaved} / ${state.maxLeadsSaved}` : 'Unlimited'}
+                  {state.isGuest ? `${state.leadsSaved} / ${state.maxLeadsSaved}` : 'Server-managed'}
                 </span>
               </div>
               <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-zinc-800">
@@ -172,7 +207,7 @@ export default function SecurityAuditModal({
               <p className="text-[11px] text-zinc-500">
                 {state.isGuest
                   ? `${Math.max(0, state.maxLeadsSaved - state.leadsSaved)} lead saves remaining.`
-                  : 'Unlimited leads storage active.'}
+                  : 'Authenticated mode uses server-managed lead limits.'}
               </p>
             </div>
           </div>
@@ -181,7 +216,7 @@ export default function SecurityAuditModal({
           <div className="space-y-2">
             <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-zinc-500" />
-              Live Security Audit Trail ({state.auditLogs.length} events)
+              Local Session Activity ({state.auditLogs.length} events)
             </h3>
             <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl overflow-hidden max-h-52 overflow-y-auto divide-y divide-zinc-900">
               {state.auditLogs.map((log) => (
@@ -202,7 +237,7 @@ export default function SecurityAuditModal({
                       </span>
                     </div>
                     <p className="text-[11px] text-zinc-500 font-mono">
-                      Session hash: {log.ipHash} • ID: {log.id}
+                      Browser-local event • ID: {log.id}
                     </p>
                   </div>
                   <span className="text-[11px] text-zinc-500 shrink-0">
@@ -218,9 +253,10 @@ export default function SecurityAuditModal({
         <div className="p-4 border-t border-zinc-800 bg-zinc-950 flex items-center justify-between">
           <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-            Security audit logs are immutable and session-secured.
+            This panel is browser-local telemetry, not a server security log or identity record.
           </span>
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-zinc-950 font-bold text-xs rounded-xl transition-colors cursor-pointer"
           >
