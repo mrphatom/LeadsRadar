@@ -55,7 +55,9 @@ async function fetchWithTimeout(input: string | URL, init: RequestInit = {}, tim
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 app.use(requestContext);
-app.use(helmet());
+app.use(runtimeConfig.isProduction
+  ? helmet()
+  : helmet({ contentSecurityPolicy: false }));
 app.use(cors({
   origin: (origin, callback) => {
     if (isAllowedOrigin(origin, runtimeConfig.allowedOrigins)) {
@@ -791,16 +793,35 @@ Craft a professional, friendly response that builds rapport and advances the sal
 });
 
 
-app.use(errorHandler);
-
 // Configure Vite middleware or production file serving
 async function startServer() {
   if (!runtimeConfig.isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: "custom",
     });
     app.use(vite.middlewares);
+    app.use(async (req, res, next) => {
+      if (req.method !== 'GET' || !req.accepts('html') || req.path.startsWith('/api/')) {
+        next();
+        return;
+      }
+
+      try {
+        const templatePath = path.resolve(process.cwd(), 'index.html');
+        const transformedTemplate = await vite.transformIndexHtml(
+          req.originalUrl,
+          fs.readFileSync(templatePath, 'utf8'),
+        );
+        const template = process.env.DISABLE_HMR === 'true'
+          ? transformedTemplate.replace(/\s*<script type="module" src="\/@vite\/client"><\/script>/, '')
+          : transformedTemplate;
+        res.status(200).type('html').send(template);
+      } catch (error) {
+        vite.ssrFixStacktrace(error as Error);
+        next(error);
+      }
+    });
     console.log("Vite development middleware configured.");
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -818,7 +839,7 @@ async function startServer() {
     });
     console.log("Production static files server configured.");
   }
-
+  app.use(errorHandler);
   app.listen(runtimeConfig.port, "0.0.0.0", () => {
     logEvent("info", "server_listening", undefined, { port: runtimeConfig.port, production: runtimeConfig.isProduction });
   });
