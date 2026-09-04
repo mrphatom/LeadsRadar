@@ -13,7 +13,8 @@ import {
   updateProfile
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, authPersistenceReady, db, handleFirestoreError, OperationType } from '../firebase';
+import type { AuthPersistenceMode } from '../authPersistence';
 import { apiFetch } from '../apiClient';
 import { setGuestSession } from '../services/guestAuditService';
 import { isProSubscriptionActive } from '../utils/subscription';
@@ -38,6 +39,7 @@ interface AuthContextType {
   user: FirebaseUser | null;
   profile: UserProfile | null;
   loading: boolean;
+  persistenceMode: AuthPersistenceMode;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
@@ -83,11 +85,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [persistenceMode, setPersistenceMode] = useState<AuthPersistenceMode>('memory');
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
+    let unsubscribeAuth: (() => void) | null = null;
+    let disposed = false;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+    const initializeAuthListener = async () => {
+      const mode = await authPersistenceReady;
+      if (disposed) return;
+      setPersistenceMode(mode);
+
+      unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (unsubscribeProfile) {
         unsubscribeProfile();
         unsubscribeProfile = null;
@@ -173,17 +183,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProfile(null);
         setLoading(false);
       }
-    });
+      });
+    };
+
+    void initializeAuthListener();
 
     return () => {
-      unsubscribeAuth();
-      if (unsubscribeProfile) {
-        unsubscribeProfile();
-      }
+      disposed = true;
+      unsubscribeAuth?.();
+      unsubscribeProfile?.();
     };
   }, []);
 
   const signInWithGoogle = async () => {
+    await authPersistenceReady;
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
@@ -194,6 +207,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithEmail = async (email: string, pass: string) => {
+    await authPersistenceReady;
     try {
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (error) {
@@ -203,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signUpWithEmail = async (email: string, pass: string, name: string) => {
+    await authPersistenceReady;
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
       const createdUser = userCredential.user;
@@ -221,6 +236,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInAsGuest = async () => {
+    await authPersistenceReady;
     try {
       try {
         const userCredential = await signInAnonymously(auth);
@@ -315,7 +331,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider value={{ 
       user, 
       profile, 
-      loading, 
+      loading,
+      persistenceMode, 
       signInWithGoogle, 
       signInWithEmail, 
       signUpWithEmail, 

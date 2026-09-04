@@ -5,7 +5,7 @@ import { Sparkles, Mail, Lock, User, AlertCircle, ArrowRight, ShieldCheck, Eye, 
 import brandLogo from '../assets/images/logo_1779885424761.png';
 
 export const AuthView: React.FC = () => {
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsGuest } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsGuest, persistenceMode } = useAuth();
   
   const [isRegister, setIsRegister] = useState<boolean>(false);
   const [email, setEmail] = useState<string>('');
@@ -137,6 +137,13 @@ export const AuthView: React.FC = () => {
               Register
             </button>
           </div>
+
+          {persistenceMode === 'memory' && (
+            <div role="status" className="flex items-start gap-2 bg-amber-500/10 border border-amber-900/50 text-amber-300 text-xs p-3.5 rounded-xl">
+              <AlertCircle className="h-4.5 w-4.5 shrink-0 text-amber-400 mt-0.5" />
+              <p className="leading-relaxed">This browser cannot provide durable session storage. You can sign in, but the session may not survive a reload. Check private browsing and storage permissions if this persists.</p>
+            </div>
+          )}
 
           {error && (
             <div role="alert" className="flex items-start gap-2 bg-rose-500/10 border border-rose-950 text-rose-400 text-xs p-3.5 rounded-xl">
